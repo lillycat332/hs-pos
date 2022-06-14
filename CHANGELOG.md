@@ -1,5 +1,5 @@
 # Revision history for hs-pos
 
-## 0.1.0.0 -- YYYY-mm-dd
+## 0.1.0.0 -- 2022-06-14
 
-* First version. Released on an unsuspecting world.
+* First version. Has basic HTTP server functionality.

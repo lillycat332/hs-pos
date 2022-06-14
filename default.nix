@@ -1,6 +1,6 @@
 # { pkgs, lib, stdenv, fetchFromGitHub }:
 let
-  pkgs = import <nixpkgs> {};
+  pkgs = import <nixpkgs> { };
   stdenv = pkgs.llvmPackages_13.stdenv;
 in
 pkgs.stdenv.mkDerivation {
@@ -9,25 +9,27 @@ pkgs.stdenv.mkDerivation {
 
   # src = pkgs.fetchFromGitHub {
   #   owner = "lillycat332";
-  #   repo = "meowlang";
+  #   repo = "hs-pos";
   #   rev = "master";
-  #   hash = "sha256-lUG1yufj8OkN/Ycy2h7VoCNgAaTaLGH8sAW7+IGuXiQ=";
+  #   hash = "";
   # };
 
   buildInputs = with pkgs; [
-		clang
-		zlib
-		cabal-install
-		ghc 
-	];
+    clang
+    zlib
+    cabal-install
+    ghc
+    sqlite
+  ];
 
-  installPhase = ''
+  buildPhase = ''
     cabal build
   '';
 
   meta = {
-    description = "CUM";
-    # homepage = "https://github.com/lillycat332/meowlang";
+    description = "PoS (point of sale) system in haskell";
+    # homepage = "https://github.com/lillycat332/hs-pos";
     license = "BSD";
   };
 }
+
