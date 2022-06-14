@@ -1,0 +1,6 @@
+[submodule "elm-pos"]
+	path = elm-pos
+	url = https://github.com/lillycat332/elm-pos
+[submodule "ui"]
+	path = ui
+	url = https://github.com/lillycat332/elm-pos
