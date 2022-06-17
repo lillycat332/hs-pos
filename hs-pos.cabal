@@ -29,14 +29,20 @@ executable hs-pos
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
     build-depends:    base ^>=4.15.1.0, 
-                      scotty, 
-                      wai, 
-                      wai-extra, 
-                      wai-middleware-static,
-                      aeson,
-                      HDBC,
-                      HDBC-sqlite3,
-                      http-types
+                    , scotty
+                    , wai
+                    , wai-extra
+                    , wai-middleware-static
+                    , aeson
+                    , HDBC
+                    , HDBC-sqlite3
+                    , http-types
+                    , beam-migrate
+                    , beam-core
+                    , beam-sqlite
+                    , sqlite-simple
+                    , text
+                    , optparse-applicative
 
     hs-source-dirs:   app
     default-language: Haskell2010
