@@ -28,7 +28,7 @@ executable hs-pos
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.15.1.0, 
+    build-depends:    base ^>=4.15.1.0 
                     , scotty
                     , wai
                     , wai-extra
