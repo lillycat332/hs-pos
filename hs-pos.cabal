@@ -12,8 +12,8 @@ version:            0.1.0.0
 -- bug-reports:
 license:            BSD-3-Clause
 license-file:       LICENSE
-author:             Lilly
-maintainer:         54189319+lillycat332@users.noreply.github.com
+author:             Lilly Cham
+maintainer:         lilly@lillycat.tech
 
 -- A copyright notice.
 -- copyright:
@@ -23,11 +23,10 @@ extra-source-files: CHANGELOG.md
 executable hs-pos
     main-is:          Main.hs
 
-    -- Modules included in this executable, other than Main.
-    -- other-modules:
+    -- other-modules:    Database.hs
 
-    -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
+
     build-depends:    base ^>=4.15.1.0 
                     , scotty
                     , wai
