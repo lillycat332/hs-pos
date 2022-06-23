@@ -25,3 +25,5 @@ cabal.project.local~
 dist-newstyle
 store.db
 public/elm.js
+public/elm.min.js
+frontend
