@@ -36,10 +36,6 @@ executable hs-pos
                     , HDBC
                     , HDBC-sqlite3
                     , http-types
-                    , beam-migrate
-                    , beam-core
-                    , beam-sqlite
-                    , sqlite-simple
                     , text
                     , optparse-applicative
 
