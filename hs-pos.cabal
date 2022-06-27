@@ -38,6 +38,7 @@ executable hs-pos
                     , http-types
                     , text
                     , optparse-applicative
+                    , esqueleto
 
     hs-source-dirs:   app
     default-language: Haskell2010
