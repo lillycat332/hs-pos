@@ -1,0 +1,71 @@
+@startuml EPOSDiagram
+title EPoS Design Diagram
+
+Package "Browser Front End" {
+  component [MUI Library] as MUI
+  component [React JS] as React
+	component [Fetch JS API] as Fetch
+}
+
+cloud Network {
+}
+ 
+Package "Server"{
+  [ HTTP\n Handler\n Functions] as HTTPHandler
+  [HTTP Server] as HTTPServer
+  interface "REST\n API" as REST
+} 
+
+Package "Database functions" as RDBMS {
+	package "UserDB Functions" as UDF {
+    [createUser]
+    [queryUser]
+    [deleteUser]
+    [updateUser]
+  }
+
+  package "ProductDB Functions" as PDF {
+    [createProduct]
+    [queryProduct]
+    [deleteProduct]
+    [updateProduct]
+  }
+
+  package "SalesDB Functions" as SDF {
+    [createSale]
+    [querySales]
+    [deleteSale]
+    [updateSale]
+  }
+  interface "." as dbf
+}
+
+file "Static files" as Files {
+  file "Javascript Bundle" as Bundle
+  file "HTML Source" as HTML
+}
+
+interface "Selda SQL Driver" as DBLib
+
+database "SQL Database" as DB {
+  [Products] as ProductDB
+  [Users] as UserDB
+  [Sales] as SaleDB
+}
+
+MUI -left-> React
+React <-down-> Fetch
+Fetch <-down-> Network
+
+Files -up-> HTTPServer
+Bundle -left-> HTML
+
+HTTPServer -up-> Network
+Network <-down-( REST
+HTTPHandler -right-( REST
+HTTPHandler -down-( dbf
+
+RDBMS <-down-( DBLib
+DBLib )--> DB
+ProductDB -- SaleDB
+@enduml

@@ -39,6 +39,8 @@ executable hs-pos
                     , text
                     , optparse-applicative
                     , esqueleto
+                    , selda-sqlite
+                    , selda
 
     hs-source-dirs:   app
     default-language: Haskell2010

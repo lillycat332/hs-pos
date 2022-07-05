@@ -1,0 +1,63 @@
+@startuml ERD
+title Entity Relationship Diagram
+
+entity User {
+	* UserID : int, not null, auto increment
+	Primary Key
+	--
+	* UserName : string, not null, unique
+	* HashedPassword : string, not null
+	* Privilege : integer, not null
+	* Address : string
+	* Email : string
+	* Phone : string
+}
+
+entity Till {
+	* TillID : int, not null, auto increment
+	Primary Key
+	--
+	* TillName : string, not null, unique
+	* TillLocation : string, not null
+	* TillStatus : bool
+	* TillManager : User, not null
+}
+
+entity Product {
+	* ProductID : int, not null, auto increment
+	Primary Key
+	--
+	* ProductName : string, not null, unique
+	* Price : money, not null
+}
+
+entity SalesData {
+	* SalesDataID : int, not null, auto increment
+	Primary Key
+	--
+	* ProductID : int, not null
+	Foreign Key
+	--
+	* SoldThisMonth: int
+	* SoldLastMonth: int
+	* SoldThisYear: int
+}
+
+entity StockData {
+	* StockDataID : int, not null, auto increment
+	PrimaryKey
+	--
+	* ProductID : int, not null
+	Foreign Key
+	--
+	* InStock : int
+	* Cost : money
+	* Price : money
+	Foreign Key
+	* Profit : money
+}
+
+SalesData ||--|| Product
+SalesData ||--|| StockData
+Product ||-right-|| StockData
+@enduml

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Diagram>
+  <ID>DATABASE</ID>
+  <OriginalElement>4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.SCHEMA:main</OriginalElement>
+  <nodes>
+    <node x="118.58333333333337" y="248.0">4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.user_till_xref</node>
+    <node x="550.7500000000001" y="96.83333333333334">4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.sales</node>
+    <node x="111.0833333333334" y="85.83333333333334">4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.users</node>
+    <node x="290.4166666666667" y="248.0">4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.products_sales_xref</node>
+    <node x="558.2500000000001" y="-38.0">4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.stock</node>
+    <node x="104.08333333333337" y="-49.0">4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.tills</node>
+    <node x="310.5833333333335" y="-49.0">4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.products</node>
+  </nodes>
+  <notes />
+  <edges>
+    <edge source="4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.user_till_xref" target="4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.users" relationship="REFERENCES">
+      <point x="13.0" y="-38.0" />
+      <point x="205.58333333333337" y="226.91666666666669" />
+      <point x="192.5833333333334" y="226.91666666666669" />
+      <point x="0.0" y="60.0" />
+    </edge>
+    <edge source="4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.stock" target="4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.products" relationship="REFERENCES">
+      <point x="-76.50000000000011" y="0.0" />
+      <point x="521.4166666666667" y="0.0" />
+      <point x="521.4166666666667" y="154.0" />
+      <point x="397.58333333333337" y="154.0" />
+      <point x="-1.1368683772161603E-13" y="49.00033333333334" />
+    </edge>
+    <edge source="4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.products_sales_xref" target="4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.products" relationship="REFERENCES">
+      <point x="4.416666666666686" y="-40.83333333333337" />
+      <point x="397.83333333333337" y="154.0" />
+      <point x="397.58333333333337" y="154.0" />
+      <point x="-1.1368683772161603E-13" y="49.00033333333334" />
+    </edge>
+    <edge source="4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.products_sales_xref" target="4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.sales" relationship="REFERENCES">
+      <point x="103.0" y="0.0" />
+      <point x="634.7500000000001" y="286.0" />
+      <point x="0.0" y="49.0" />
+    </edge>
+    <edge source="4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.user_till_xref" target="4ab900dd-8e10-43d8-984d-9cfe5bf7f61e.TABLE:main.tills" relationship="REFERENCES">
+      <point x="-74.0" y="0.0" />
+      <point x="34.58333333333337" y="286.0" />
+      <point x="34.58333333333337" y="0.0" />
+      <point x="-85.0" y="0.0" />
+    </edge>
+  </edges>
+  <settings layout="Hierarchic" zoom="1.5" showDependencies="false" x="412.5" y="144.5" />
+  <SelectedNodes />
+  <Categories>
+    <Category>Columns</Category>
+    <Category>Comments</Category>
+    <Category>Key columns</Category>
+    <Category>Virtual foreign keys</Category>
+  </Categories>
+</Diagram>
+

@@ -6,6 +6,8 @@
            , TypeFamilies
            , TypeSynonymInstances 
            , OverloadedStrings
+           , TypeApplications
+           , OverloadedLabels
 #-}
 module Main where      
 import Control.Applicative
@@ -17,9 +19,6 @@ import Data.Maybe (fromMaybe)
 import Data.Monoid (mconcat)
 import Data.Semigroup ((<>))
 import Data.Text (Text)
-import Database.HDBC
-import Database.HDBC.Sqlite3
-import GHC.Generics
 import Network.HTTP.Types
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Network.Wai.Middleware.Static (addBase, noDots, staticPolicy, (>->))
@@ -29,6 +28,10 @@ import qualified Options.Applicative as Opt
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
 import Web.Scotty
+import Database.HDBC
+import qualified Database.HDBC as H
+import Database.HDBC.Sqlite3 (connectSqlite3)
+
 
 data Args = Args
   { optDb     :: String
@@ -64,6 +67,14 @@ main :: IO ()
 main = do
   opts <- execParser opts
   let port = optPort opts
+
+  -- withSQLite (optDb opts) $ do
+  --   tryCreateTable users
+  --   tryCreateTable products
+  --   usersSelect <- query $ do
+  --     user <- select users
+  --     return (user ! #user_name :*: user ! #user_privilege)
+  --   liftIO $ print usersSelect
 
   scotty port $ do
     middleware $ staticPolicy (noDots >-> addBase "public") 
@@ -108,20 +119,52 @@ restHandle = do
   put "/prods/:u" $ do
     html "put"
 
-data Product
-  = Product
-  { _productId      :: Integer
-  , _productName    :: Text
-  , _productPrice   :: Double
-  } deriving         ( Generic )
+-- saleHandle :: ScottyM () 
+-- saleHandle = do
+--   get "/sales/:date/:id/" $ do 
+--     id    <- param "id"
+--     date  <- param "date"
+--     sales <- monthlySales "store.db" date id
+--     html . fromSql sales
 
-data UserT f
-  = User
-  { userId        :: Integer
-  , userName      :: Text
-  , userPassword  :: Text
-  , userPrivilege :: Integer 
-  } deriving       ( Generic )
+-- SQL Tables
+
+-- data Product = Product
+--   { product_id   :: Int
+--   , product_name :: Text
+--   , product_price :: Double
+--   } deriving Generic
+-- instance SqlRow Product
+
+-- data User = User
+--   { user_id        :: Int
+--   , user_name      :: Text
+--   , user_password  :: Text
+--   , user_privilege :: Int
+--   } deriving Generic
+-- instance SqlRow User
+
+-- users :: Table User
+-- users = table "users" [#user_id :- primary]
+
+-- products :: Table Product
+-- products = table "products" [#product_id :- primary]
+
+-- SQL functions
+
+-- | monthlySales takes:
+-- c, a connection,
+-- x, a date in the format "YYYY-MM",
+-- y, a product id, 
+-- and returns the total sales for that month.
+monthlySales :: String -> String -> Int -> IO [[SqlValue]]
+monthlySales c x y = do
+  conn <- connectSqlite3 c
+  let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
+  r <- H.quickQuery' conn q [toSql x, toSql y]
+  disconnect conn
+  return r
+
 
 -- instance Aeson.ToJSON User where
 --   toJSON (User _userId _userName _userPassword _userPrivilege) = 
@@ -129,4 +172,4 @@ data UserT f
 --                  , "name" .= _userName
 --                  , "passwd" .= _userPassword
 --                  , "privilege" .= _userPrivilege
---                  ]
+--                  ] 
