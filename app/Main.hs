@@ -1,7 +1,8 @@
 {- 
 hs-pos
 Main.hs
-Created by Lilly Cham 
+Created by Lilly Cham
+
 Copyright (c) 2022, Lilly Cham
 
 All rights reserved.
