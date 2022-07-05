@@ -39,6 +39,7 @@ data Args = Args
   , optQuiet  :: Bool
   }
 
+
 args :: Parser Args
 args = Args <$> 
   strOption
@@ -62,6 +63,7 @@ args = Args <$>
   <> short 'q'
   <> help "Don't print debug info to stdout"
   )
+
 
 main :: IO ()
 main = do
@@ -92,6 +94,7 @@ main = do
 
 
 -- Connection handlers
+
 
 home :: ScottyM ()
 home = get "/" $ file "./public/index.html"
@@ -127,22 +130,24 @@ restHandle = do
 --     sales <- monthlySales "store.db" date id
 --     html . fromSql sales
 
+
 -- SQL Tables
 
--- data Product = Product
---   { product_id   :: Int
---   , product_name :: Text
---   , product_price :: Double
---   } deriving Generic
--- instance SqlRow Product
 
--- data User = User
---   { user_id        :: Int
---   , user_name      :: Text
---   , user_password  :: Text
---   , user_privilege :: Int
---   } deriving Generic
--- instance SqlRow User
+data Product = Product
+  { product_id    :: Int
+  , product_name  :: Text
+  , product_price :: Double
+  } deriving Generic
+
+
+data User = User
+  { user_id        :: Int
+  , user_name      :: Text
+  , user_password  :: Text
+  , user_privilege :: Int
+  } deriving Generic
+
 
 -- users :: Table User
 -- users = table "users" [#user_id :- primary]
@@ -150,13 +155,16 @@ restHandle = do
 -- products :: Table Product
 -- products = table "products" [#product_id :- primary]
 
+
 -- SQL functions
+
 
 -- | monthlySales takes:
 -- c, a connection,
 -- d, a date in the format "YYYY-MM",
 -- id, a product id, 
 -- and returns the total sales for that month.
+
 monthlySales :: String -> String -> Int -> IO [[SqlValue]]
 monthlySales c d id = do
   conn <- connectSqlite3 c
@@ -164,6 +172,11 @@ monthlySales c d id = do
   r <- H.quickQuery' conn q [toSql d, toSql id]
   disconnect conn
   return r
+
+
+-- Marshalling
+-- To JSON
+
 
 -- instance Aeson.ToJSON User where
 --   toJSON (User _userId _userName _userPassword _userPrivilege) = 
