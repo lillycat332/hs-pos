@@ -154,17 +154,16 @@ restHandle = do
 
 -- | monthlySales takes:
 -- c, a connection,
--- x, a date in the format "YYYY-MM",
--- y, a product id, 
+-- d, a date in the format "YYYY-MM",
+-- id, a product id, 
 -- and returns the total sales for that month.
 monthlySales :: String -> String -> Int -> IO [[SqlValue]]
-monthlySales c x y = do
+monthlySales c d id = do
   conn <- connectSqlite3 c
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
-  r <- H.quickQuery' conn q [toSql x, toSql y]
+  r <- H.quickQuery' conn q [toSql d, toSql id]
   disconnect conn
   return r
-
 
 -- instance Aeson.ToJSON User where
 --   toJSON (User _userId _userName _userPassword _userPrivilege) = 
