@@ -149,6 +149,36 @@ data User = User
   } deriving Generic
 
 
+data Stock = Stock
+  { product_id :: Int
+  , in_stock   :: Text
+  } deriving Generic
+
+
+data Sale = Sale
+  { sales_id    :: Int
+  , sales_date  :: String
+  , number_sold :: Int
+  } deriving Generic
+
+
+data Products_sales_xref = Products_sales_xref
+  { product_id :: Int
+  , sales_id   :: Int
+  } deriving Generic
+
+
+data Till = Till
+  { till_id   :: Int
+  , till_name :: Text
+  } deriving Generic
+
+data User_till_xref = User_till_xref
+  { user_id   :: Int
+  , till_id   :: Int
+  } deriving Generic
+
+
 -- users :: Table User
 -- users = table "users" [#user_id :- primary]
 
