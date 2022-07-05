@@ -4,3 +4,6 @@
 [submodule "ui"]
 	path = ui
 	url = https://github.com/lillycat332/elm-pos
+[submodule "frontend"]
+	path = frontend
+	url = https://github.com/lillycat332/react-pos

@@ -26,5 +26,4 @@ dist-newstyle
 store.db
 public/elm.js
 public/elm.min.js
-frontend
 public/bundle.js
