@@ -36,43 +36,45 @@
 -}
 
 
-{-# LANGUAGE DeriveAnyClass
-           , DeriveGeneric
-           , MultiParamTypeClasses
-           , ScopedTypeVariables 
-           , StandaloneDeriving 
-           , TypeFamilies
-           , TypeSynonymInstances 
-           , OverloadedStrings
-           , TypeApplications
-           , OverloadedLabels
-#-}
+{-# LANGUAGE MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use camelCase" #-}
 
-
-module Main where      
+module Main where
 import Control.Applicative
-import Control.Applicative ((<$>))
-import Control.Monad (join)
+import Control.Monad (join, when, unless)
 import Data.Aeson ((.=))
 import Data.Int
+import Data.IORef
 import Data.Maybe (fromMaybe)
 import Data.Monoid (mconcat)
 import Data.Semigroup ((<>))
-import qualified Data.Text.Lazy as T
+import Database.HDBC
+import Database.HDBC.Sqlite3 (connectSqlite3)
 import Network.HTTP.Types
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Network.Wai.Middleware.Static (addBase, noDots, staticPolicy, (>->))
 import Options.Applicative hiding (header)
 import qualified Data.Aeson as A
+import qualified Data.Text.Lazy as T
+import qualified Database.HDBC as H
 import qualified Options.Applicative as Opt
+import qualified System.IO.Unsafe as Unsafe
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
 import Web.Scotty
-import Database.HDBC
-import qualified Database.HDBC as H
-import Database.HDBC.Sqlite3 (connectSqlite3)
-import qualified System.IO.Unsafe as Unsafe
-import Data.IORef
+    ( delete,
+      file,
+      get,
+      html,
+      json,
+      middleware,
+      param,
+      post,
+      put,
+      scotty,
+      text,
+      ScottyM )
 
 
 data Args = Args
@@ -83,7 +85,7 @@ data Args = Args
 
 
 args :: Parser Args
-args = Args <$> 
+args = Args <$>
   strOption
   (  long "db"
   <> short 'd'
@@ -91,7 +93,7 @@ args = Args <$>
   <> showDefault
   <> value "store.db"
   <> metavar "<path to file>"
-  ) <*> 
+  ) <*>
   option auto
   (  help "The port number to serve on"
   <> long "port"
@@ -121,13 +123,11 @@ main = do
   --   liftIO $ print usersSelect
 
   scotty port $ do
-    middleware $ staticPolicy (noDots >-> addBase "public") 
-    if optQuiet opts /= True
-      then middleware logStdoutDev
-      else return ()
+    middleware $ staticPolicy (noDots >-> addBase "public")
+    unless (optQuiet opts) $ middleware logStdoutDev
 
     home >> adm >> restHandle >> saleHandle
-  
+
   where
     opts = info (args <**> helper)
       (  fullDesc
@@ -148,35 +148,26 @@ adm = get "/dashboard" $ file "./public/dash.html"
 
 
 restHandle :: ScottyM ()
-restHandle = do 
-  get "/users/:u" $ do
-    json $ A.toJSON exampleUser
-  post "/users/:u" $ do
-    html "post"
-  delete "/users/:u" $ do 
-    html "delete"
-  put "/users/:u" $ do
-    html "put"
-  
-  get "/prods/:u" $ do
-    html "get"
-  post "/prods/:u" $ do
-    html "post"
-  delete "/prods/:u" $ do 
-    html "delete"
-  put "/prods/:u" $ do
-    html "put"
+restHandle = do
+  get "/users/:u" $ json $ A.toJSON exampleUser
+  post "/users/:u" $ html "post"
+  delete "/users/:u" $ html "delete"
+  put "/users/:u" $ html "put"
+
+  get "/prods/:u" $ html "get"
+  post "/prods/:u" $ html "post"
+  delete "/prods/:u" $ html "delete"
+  put "/prods/:u" $ html "put"
 
 
 
 saleHandle :: ScottyM ()
-saleHandle = do
-  get "/sales/:date/:id/" $ do 
-    id <- param "id"
-    date :: String <- param "date"
-    let a = Unsafe.unsafePerformIO (monthlySales "store.db" date id)
-    text $ T.pack $ show a
-    
+saleHandle = get "/sales/:date/:id/" $ do
+  id <- param "id"
+  date :: String <- param "date"
+  let a = Unsafe.unsafePerformIO (monthlySales "store.db" date id)
+  text $ T.pack $ show a
+
 getSqlVal = Unsafe.unsafePerformIO $ newIORef 10
 getMo = Unsafe.unsafePerformIO (monthlySales "store.db" "2022-07" 0)
 
@@ -195,38 +186,38 @@ data User = User
   , user_name      :: T.Text
   , user_password  :: T.Text
   , user_privilege :: Int
-  } 
+  }
 
 
 data Stock = Stock
   { stock_id   :: Int
   , in_stock   :: T.Text
-  } 
+  }
 
 
 data Sale = Sale
   { sales_id    :: Int
   , sales_date  :: String
   , number_sold :: Int
-  } 
+  }
 
 
 data Products_sales_xref = Products_sales_xref
   { xref_product_id :: Int  -- Foreign key to product_id
   , xref_sales_id   :: Int  -- Foreign key to sales_id
-  } 
+  }
 
 
 data Till = Till
   { till_id   :: Int
   , till_name :: T.Text
-  } 
+  }
 
 
 data User_till_xref = User_till_xref
   { xref_user_id   :: Int  -- Foreign key to user_id
   , xref_till_id   :: Int  -- Foreign key to till_id
-  } 
+  }
 
 exampleUser = User 1 "admin" "password" 1
 
@@ -251,7 +242,7 @@ monthlySales conn d id = do
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
   r <- H.quickQuery' conn' q [toSql d, toSql id]
   disconnect conn'
-  let r'   = r !! 0
+  let r'   = head r
   let r''  = head r'
   return (fromSql r'' :: Int)
 
@@ -266,7 +257,7 @@ yearlySales conn d id = do
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y', sales_date) = (?) AND products_sales_xref.product_id = (?)"
   r <- H.quickQuery' conn' q [toSql d, toSql id]
   disconnect conn'
-  let r'   = r !! 0
+  let r'   = head r
   let r''  = head r'
   return (fromSql r'' :: Int)
 
@@ -276,7 +267,7 @@ yearlySales conn d id = do
 
 
 instance A.ToJSON User where
-  toJSON (User user_id user_name user_password user_privilege) = 
+  toJSON (User user_id user_name user_password user_privilege) =
     A.object [ "id" .= user_id
                  , "name" .= user_name
                  , "passwd" .= user_password
@@ -284,27 +275,27 @@ instance A.ToJSON User where
                  ]
 
 instance A.ToJSON Product where
-  toJSON (Product product_id product_name product_price) = 
+  toJSON (Product product_id product_name product_price) =
     A.object [ "id" .= product_id
              , "name" .= product_name
              , "price" .= product_price
              ]
 
 instance A.ToJSON Stock where
-  toJSON (Stock stock_id in_stock) = 
+  toJSON (Stock stock_id in_stock) =
     A.object [ "id" .= stock_id
              , "in_stock" .= in_stock
              ]
 
 instance A.ToJSON Sale where
-  toJSON (Sale sales_id sales_date number_sold) = 
+  toJSON (Sale sales_id sales_date number_sold) =
     A.object [ "id" .= sales_id
              , "date" .= sales_date
              , "number_sold" .= number_sold
              ]
 
 instance A.ToJSON Till where
-  toJSON (Till till_id till_name) = 
+  toJSON (Till till_id till_name) =
     A.object [ "id" .= till_id
              , "name" .= till_name
              ]

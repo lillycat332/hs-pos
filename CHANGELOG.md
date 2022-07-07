@@ -1,5 +1,18 @@
 # Revision history for hs-pos
 
-## 0.1.0.0 -- 2022-06-14
+## 1.0.0.0 -- 2022-06-14
 
 * First version. Has basic HTTP server functionality.
+
+## 2.0.0.0 -- 2022-07-07
+
+* Major upgrades:
+* Added database functionality
+* Extended HTTP server functionality
+
+## 2.0.1.0 -- 2022-07-07
+
+* Minor upgrades:
+* Refactor some code
+* Formatting
+* Begin factoring some of the code into separate files - this is a work in progress
