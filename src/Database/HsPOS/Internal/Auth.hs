@@ -1,7 +1,7 @@
 {- 
   hs-pos
   Main.hs
-  Created by Lilly Cham
+  Created by Lilly Cham on 7/5/22.
 
   Copyright (c) 2022, Lilly Cham
 
@@ -40,82 +40,16 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
 
-
-module Database.HsPOS.Internal.Http where
+module Database.HsPOS.Internal.Auth where
 import Control.Applicative
 import Control.Monad (join, when, unless)
 import Data.Aeson ((.=))
 import Data.Int
-import Data.IORef
 import Data.Maybe (fromMaybe)
 import Data.Monoid (mconcat)
-import Data.Semigroup ((<>))
-import Database.HDBC
-import Database.HDBC.Sqlite3 (connectSqlite3)
-import Network.HTTP.Types
-import Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import Network.Wai.Middleware.Static (addBase, noDots, staticPolicy, (>->))
 import Options.Applicative hiding (header)
 import qualified Data.Aeson as A
 import qualified Data.Text.Lazy as T
 import qualified Database.HDBC as H
-import qualified Options.Applicative as Opt
-import qualified System.IO.Unsafe as Unsafe
-import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
-import Web.Scotty
-    ( delete,
-      file,
-      get,
-      html,
-      json,
-      middleware,
-      param,
-      post,
-      put,
-      scotty,
-      text,
-      ScottyM )
-import Database.HsPOS.Internal.Sqlite (monthlySales, yearlySales)
-
--- Connection handlers
-
-
-home :: ScottyM ()
-home = get "/" $ file "./public/index.html"
-
-
-adm :: ScottyM ()
-adm = get "/dashboard" $ file "./public/dash.html"
-
-
-restHandle :: ScottyM ()
-restHandle = do
-  get "/users/:u" $ html "get"
-  post "/users/:u" $ html "post"
-  delete "/users/:u" $ html "delete"
-  put "/users/:u" $ html "put"
-
-  get "/prods/:u" $ html "get"
-  post "/prods/:u" $ html "post"
-  delete "/prods/:u" $ html "delete"
-  put "/prods/:u" $ html "put"
-
-
-
-saleHandle :: ScottyM ()
-saleHandle = do
-  get "/sales/:mm/:yy/:id/" $ do
-    id <- param "id"
-    mm :: String <- param "mm"
-    yy :: String <- param "yy"
-    let mmyy = mm <> "-" <> yy
-    let a = Unsafe.unsafePerformIO (monthlySales "store.db" mmyy id)
-    text $ T.pack $ show a
-  
-  get "/sales/:yy/id/" $ do
-    yy :: String <- param "yy"
-    id <- param "id"
-    let a = Unsafe.unsafePerformIO (yearlySales "store.db" yy id)
-    text $ T.pack $ show a
 

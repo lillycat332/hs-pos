@@ -62,6 +62,7 @@ import qualified Options.Applicative as Opt
 import qualified System.IO.Unsafe as Unsafe
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
+import Database.HsPOS.Internal.Sqlite
 import Web.Scotty
     ( delete,
       file,
@@ -108,19 +109,12 @@ args = Args <$>
   <> help "Don't print debug info to stdout"
   )
 
-
+-- | The main entry point.
+-- | This function is called by the GHC runtime when the program is run.
 main :: IO ()
 main = do
   opts <- execParser opts
   let port = optPort opts
-
-  -- withSQLite (optDb opts) $ do
-  --   tryCreateTable users
-  --   tryCreateTable products
-  --   usersSelect <- query $ do
-  --     user <- select users
-  --     return (user ! #user_name :*: user ! #user_privilege)
-  --   liftIO $ print usersSelect
 
   scotty port $ do
     middleware $ staticPolicy (noDots >-> addBase "public")
@@ -149,16 +143,15 @@ adm = get "/dashboard" $ file "./public/dash.html"
 
 restHandle :: ScottyM ()
 restHandle = do
-  get "/users/:u" $ json $ A.toJSON exampleUser
-  post "/users/:u" $ html "post"
+  get "/users/:u"    $ json $ A.toJSON exampleUser
+  post "/users/:u"   $ html "post"
   delete "/users/:u" $ html "delete"
-  put "/users/:u" $ html "put"
+  put "/users/:u"    $ html "put"
 
-  get "/prods/:u" $ html "get"
-  post "/prods/:u" $ html "post"
+  get "/prods/:u"    $ html "get"
+  post "/prods/:u"   $ html "post"
   delete "/prods/:u" $ html "delete"
-  put "/prods/:u" $ html "put"
-
+  put "/prods/:u"    $ html "put"
 
 
 saleHandle :: ScottyM ()
@@ -167,9 +160,6 @@ saleHandle = get "/sales/:date/:id/" $ do
   date :: String <- param "date"
   let a = Unsafe.unsafePerformIO (monthlySales "store.db" date id)
   text $ T.pack $ show a
-
-getSqlVal = Unsafe.unsafePerformIO $ newIORef 10
-getMo = Unsafe.unsafePerformIO (monthlySales "store.db" "2022-07" 0)
 
 
 -- SQL Tables
@@ -219,48 +209,8 @@ data User_till_xref = User_till_xref
   , xref_till_id   :: Int  -- Foreign key to till_id
   }
 
+exampleUser :: User
 exampleUser = User 1 "admin" "password" 1
-
--- users :: Table User
--- users = table "users" [#user_id :- primary]
-
--- products :: Table Product
--- products = table "products" [#product_id :- primary]
-
-
--- SQL functions
-
-
--- | monthlySales takes:
--- conn, a connection,
--- d, a date in the format "YYYY-MM",
--- id, a product id, 
--- and returns the total sales for that month.
-monthlySales :: String -> String -> Int -> IO Int
-monthlySales conn d id = do
-  conn' <- connectSqlite3 conn
-  let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
-  r <- H.quickQuery' conn' q [toSql d, toSql id]
-  disconnect conn'
-  let r'   = head r
-  let r''  = head r'
-  return (fromSql r'' :: Int)
-
--- | yearlySales takes:
--- conn, a connection,
--- d, a date in the format "YYYY",
--- id, a product id, 
--- and returns the total sales of said product id for that year.
-yearlySales :: String -> String -> Int -> IO Int
-yearlySales conn d id = do
-  conn' <- connectSqlite3 conn
-  let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y', sales_date) = (?) AND products_sales_xref.product_id = (?)"
-  r <- H.quickQuery' conn' q [toSql d, toSql id]
-  disconnect conn'
-  let r'   = head r
-  let r''  = head r'
-  return (fromSql r'' :: Int)
-
 
 -- Marshalling
 -- To JSON
