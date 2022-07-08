@@ -27,3 +27,4 @@ store.db
 public/elm.js
 public/elm.min.js
 public/bundle.js
+tmp
