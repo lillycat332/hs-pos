@@ -62,6 +62,7 @@ import qualified Options.Applicative as Opt
 import qualified System.IO.Unsafe as Unsafe
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
+import Database.HsPOS.Internal.Types
 
 
 -- SQL functions
@@ -77,7 +78,7 @@ monthlySales conn d id = do
   conn' <- connectSqlite3 conn
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
   r <- H.quickQuery' conn' q [toSql d, toSql id]
-  disconnect conn'  
+  disconnect conn'
   let r'   = head r
   let r''  = head r'
   return (fromSql r'' :: Int)
@@ -99,15 +100,26 @@ yearlySales conn d id = do
 
 
 tryCreateTables :: String -> IO ()
-tryCreateTables x = do
-  conn <- connectSqlite3 x
-  let c = [ "CREATE TABLE IF NOT EXISTS users (user_id INTEGER not null primary key autoincrement, user_name TEXT not null,user_password TEXT not null, user_privilege INTEGER not null)"
+tryCreateTables conn = do
+  conn' <- connectSqlite3 conn
+  let q = [ "CREATE TABLE IF NOT EXISTS users (user_id INTEGER not null primary key autoincrement, user_name TEXT not null,user_password TEXT not null, user_privilege INTEGER not null)"
           , "CREATE TABLE IF NOT EXISTS stock (product_id integer not null constraint stock_pk primary key autoincrementreferences products, in_stock integer)"
-          , "CREATE TABLE IF NOT EXISTS sales (sales_id integer constraint sales_pk primary key autoincrement, sales_date date number_sold integer)" 
+          , "CREATE TABLE IF NOT EXISTS sales (sales_id integer constraint sales_pk primary key autoincrement, sales_date date number_sold integer)"
           , "CREATE TABLE IF NOT EXISTS products (product_id INTEGER not null primary key autoincrement,product_name TEXT not null,product_price DOUBLE not null)"
           , "CREATE TABLE IF NOT EXISTS tills (till_id integer not null constraint tills_pk primary key autoincrement, till_name integer)"
           , "CREATE TABLE IF NOT EXISTS user_till_xref (user_id integer constraint user_till_xref_pk primary key constraint user_till_xref_users_user_id_fk references users, till_id integer constraint user_till_xref_tills_till_id_fk references tills)"
           , "CREATE TABLE IF NOT EXISTS products_sales_xref (product_id integer references products, sales_id   integer constraint products_sales_xref_pk primary key references sales)"
           ]
 
-  mapM_ (\x -> H.run conn x []) c
+  mapM_ (\x -> H.run conn' x []) q
+  disconnect conn'
+
+-- getUsers :: String -> IO User
+-- getUsers conn = do
+--   conn' <- connectSqlite3 conn
+--   let q = "SELECT * FROM users"
+--   r <- H.quickQuery' conn q []
+--   disconnect conn
+--   User <$> map fromSql (head r)
+
+-- SELECT till_name FROM till WHERE till.till_id=(SELECT al.till_id FROM allowed_till al where al.emp_id = (SELECT emp.emp_id FROM employees emp WHERE emp.name="example"))
