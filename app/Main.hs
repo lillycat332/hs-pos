@@ -63,6 +63,9 @@ import qualified System.IO.Unsafe as Unsafe
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
 import Database.HsPOS.Internal.Sqlite
+import Database.HsPOS.Internal.Auth
+import Network.Wai.Middleware.HttpAuth
+import Data.SecureMem -- for constant-time comparison
 import Web.Scotty
     ( delete,
       file,
@@ -85,6 +88,7 @@ data Args = Args
   }
 
 
+-- | This defines a parser for command line arguments.
 args :: Parser Args
 args = Args <$>
   strOption
@@ -117,10 +121,13 @@ main = do
   let port = optPort opts
 
   scotty port $ do
+    -- Add policies to prevent directory traversal attacks.
     middleware $ staticPolicy (noDots >-> addBase "public")
+    -- unless we are using the option -q/--quiet, log to stdout.
     unless (optQuiet opts) $ middleware logStdoutDev
 
-    home >> adm >> restHandle >> saleHandle
+    -- Try these handlers when we recieve a connection
+    static >> restHandle >> saleHandle
 
   where
     opts = info (args <**> helper)
@@ -129,16 +136,12 @@ main = do
       <> Opt.header "hs-pos -- A Haskell EPOS backend"
       )
 
-
 -- Connection handlers
 
-
-home :: ScottyM ()
-home = get "/" $ file "./public/index.html"
-
-
-adm :: ScottyM ()
-adm = get "/dashboard" $ file "./public/dash.html"
+-- serve the main static page
+static :: ScottyM ()
+static = get "/" $ file "./public/index.html"
+  -- get "/dashboard" $ file "./public/dash.html"
 
 
 restHandle :: ScottyM ()
@@ -160,7 +163,6 @@ saleHandle = get "/sales/:date/:id/" $ do
   date :: String <- param "date"
   let a = Unsafe.unsafePerformIO (monthlySales "store.db" date id)
   text $ T.pack $ show a
-
 
 -- SQL Tables
 

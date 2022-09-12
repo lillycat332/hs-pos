@@ -114,12 +114,31 @@ tryCreateTables conn = do
   mapM_ (\x -> H.run conn' x []) q
   disconnect conn'
 
--- getUsers :: String -> IO User
+-- Add a product from the database
+addProd :: String -> Int -> String -> Double -> IO ()
+addProd conn id name price = do
+  conn' <- connectSqlite3 conn
+  let q = "INSERT INTO products VALUES (?, ?, ?)"
+  r <- H.quickQuery' conn' q [toSql id, toSql name, toSql price]
+  disconnect conn'
+
+-- Remove a product
+removeProd :: String -> Int -> IO ()
+removeProd conn id = do
+  conn' <- connectSqlite3 conn
+  let q = "DELETE FROM products WHERE product_id = ?"
+  r <- H.quickQuery' conn' q [toSql id]
+  disconnect conn'
+  
+-- getUsers :: String -> [IO User]
 -- getUsers conn = do
 --   conn' <- connectSqlite3 conn
---   let q = "SELECT * FROM users"
+--   let q = "SELECT user_name FROM users"
 --   r <- H.quickQuery' conn q []
 --   disconnect conn
---   User <$> map fromSql (head r)
+--   let r' = head r
+--   mapM fromSql r'
+
+-- users = Unsafe.unsafePerformIO (getUsers "store.db")
 
 -- SELECT till_name FROM till WHERE till.till_id=(SELECT al.till_id FROM allowed_till al where al.emp_id = (SELECT emp.emp_id FROM employees emp WHERE emp.name="example"))

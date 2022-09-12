@@ -41,15 +41,10 @@
 {-# HLINT ignore "Use camelCase" #-}
 
 module Database.HsPOS.Internal.Auth where
-import Control.Applicative
-import Control.Monad (join, when, unless)
-import Data.Aeson ((.=))
-import Data.Int
-import Data.Maybe (fromMaybe)
-import Data.Monoid (mconcat)
-import Options.Applicative hiding (header)
-import qualified Data.Aeson as A
-import qualified Data.Text.Lazy as T
-import qualified Database.HDBC as H
-import Text.Read (readMaybe)
+import qualified Data.Text.Lazy           as T
+import           Web.Scotty               as S
+import           Network.Wai.Middleware.HttpAuth
+import           Data.SecureMem -- for constant-time comparison
+import           Database.HsPOS.Internal.Sqlite
 
+-- authMiddleware = basicAuth (\u p -> return $ u == "user" && secureMemFromByteString p == password) "Login"

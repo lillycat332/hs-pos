@@ -35,6 +35,8 @@ library
                     , text
                     , optparse-applicative
                     , convertible
+                    , bytestring
+                    , securemem
     exposed-modules:  Database.HsPOS.Internal.Auth
                     , Database.HsPOS.Internal.Types
                     , Database.HsPOS.Internal.Sqlite
@@ -54,5 +56,6 @@ executable hs-pos
                     , optparse-applicative
                     , convertible
                     , hs-pos
+                    , securemem
     hs-source-dirs:   app
     default-language: Haskell2010
