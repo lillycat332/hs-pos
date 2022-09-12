@@ -66,6 +66,8 @@ import Database.HsPOS.Internal.Sqlite
 import Database.HsPOS.Internal.Auth
 import Network.Wai.Middleware.HttpAuth
 import Debug.Trace
+import Control.Monad ( liftM )
+import Control.Monad.IO.Class ( liftIO )
 import Web.Scotty
     ( delete,
       file,
@@ -120,6 +122,8 @@ main = do
   opts <- execParser opts
   let port = optPort opts
   tryCreateTables $ optDb opts
+  x <- getProdName 1
+  putStrLn $ show x
 
   scotty port $ do
     -- Add policies to prevent directory traversal attacks.
@@ -149,22 +153,38 @@ static = get "/" $ file "./public/index.html"
 --   x <-  allUsers "store.db"
 --   return map A.toJSON $ map tupleToCUser x
 
+allUsersHandler :: ScottyM ()
 allUsersHandler = do
-  let users     = Unsafe.unsafePerformIO $ allUsers "store.db"
-  let userJSON  = map A.toJSON $ map (\(x,y,z) -> CensoredUser x (T.pack y) z) users 
-  get "/users/all" $ json $ A.toJSON userJSON
+  get "/users/all" $ do
+    users <- liftIO (allUsers "store.db")
+    let usersJSON = map A.toJSON $ map (\(x,y,z) -> CensoredUser x (T.pack y) z) users
+    json $ A.toJSON usersJSON
 
+allProdsHandler :: ScottyM ()
 allProdsHandler = do
-  let prods     = Unsafe.unsafePerformIO $ allProds "store.db"
-  let prodsJSON = map A.toJSON $ map (\(x,y,z) -> Product x (T.pack y) z) prods
-  get "/prods/all" $ json $ A.toJSON prodsJSON
+  get "/prods/all" $ do
+    prods <- liftIO (allProds "store.db")
+    let prodsJSON = map A.toJSON $ map (\(x,y,z) -> Product x (T.pack y) z) prods
+    json $ A.toJSON prodsJSON
 
+--allProdsHandler' :: ScottyM ()
+--allProdsHandler' = do
+ -- prods <- getProdNames
+ -- get "/prods/all" $ json $ A.toJSON prods
+  
 addProdHandler = do
   post "/prods/" $ do
     name  <- param "name"
     price <- param "price"
-    let !x = Unsafe.unsafePerformIO $ addProd "store.db" name price
+    x     <- liftIO $ addProd "store.db" name price
     json x
+    
+prodHandler :: ScottyM ()
+prodHandler = do
+  get "/prods/:id" $ do
+    id   <- param "id"
+    name <- liftIO (getProdName id)
+    json name
 
 restHandle :: ScottyM ()
 restHandle = do

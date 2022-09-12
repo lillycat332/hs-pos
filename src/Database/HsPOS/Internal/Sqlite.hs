@@ -99,6 +99,13 @@ yearlySales conn d id = do
   let r''  = head r'
   return (fromSql r'' :: Int)
 
+getProdName :: Int -> IO [String]
+getProdName id = do
+  conn <- connectSqlite3 "store.db"
+  let query = "select product_name from products where product_id = (?)"
+  r <- H.quickQuery' conn query [toSql id]
+  disconnect conn
+  return (map fromSql (head r))
 
 tryCreateTables :: String -> IO ()
 tryCreateTables conn = do
