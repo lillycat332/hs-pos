@@ -88,21 +88,6 @@ home = get "/" $ file "./public/index.html"
 adm :: ScottyM ()
 adm = get "/dashboard" $ file "./public/dash.html"
 
-
-restHandle :: ScottyM ()
-restHandle = do
-  get "/users/:u" $ html "get"
-  post "/users/:u" $ html "post"
-  delete "/users/:u" $ html "delete"
-  put "/users/:u" $ html "put"
-
-  get "/prods/:u" $ html "get"
-  post "/prods/:u" $ html "post"
-  delete "/prods/:u" $ html "delete"
-  put "/prods/:u" $ html "put"
-
-
-
 saleHandle :: ScottyM ()
 saleHandle = do
   get "/sales/:mm/:yy/:id/" $ do

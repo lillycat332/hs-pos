@@ -127,7 +127,7 @@ main = do
     unless (optQuiet opts) $ middleware logStdoutDev
 
     -- Try these handlers when we recieve a connection
-    static >> restHandle >> saleHandle
+    static >> allUsersHandler >> allProdsHandler >> restHandle >> saleHandle
 
   where
     opts = info (args <**> helper)
@@ -143,10 +143,23 @@ static :: ScottyM ()
 static = get "/" $ file "./public/index.html"
   -- get "/dashboard" $ file "./public/dash.html"
 
+-- conv :: IO A.Value
+-- conv = do
+--   x <-  allUsers "store.db"
+--   return map A.toJSON $ map tupleToCUser x
+
+allUsersHandler = do
+  let users     = Unsafe.unsafePerformIO $ allUsers "store.db"
+  let userJSON  = map A.toJSON $ map (\(x,y,z) -> CensoredUser x (T.pack y) z) users 
+  get "/users/all" $ json $ A.toJSON userJSON
+
+allProdsHandler = do
+  let prods     = Unsafe.unsafePerformIO $ allProds "store.db"
+  let prodsJSON = map A.toJSON $ map (\(x,y,z) -> Product x (T.pack y) z) prods
+  get "/prods/all" $ json $ A.toJSON prodsJSON
 
 restHandle :: ScottyM ()
 restHandle = do
-  get "/users/:u"    $ json $ A.toJSON exampleUser
   post "/users/:u"   $ html "post"
   delete "/users/:u" $ html "delete"
   put "/users/:u"    $ html "put"
@@ -155,7 +168,6 @@ restHandle = do
   post "/prods/:u"   $ html "post"
   delete "/prods/:u" $ html "delete"
   put "/prods/:u"    $ html "put"
-
 
 saleHandle :: ScottyM ()
 saleHandle = get "/sales/:date/:id/" $ do
@@ -180,6 +192,11 @@ data User = User
   , user_privilege :: Int
   }
 
+data CensoredUser = CensoredUser
+  { cuser_id        :: Int
+  , cuser_name      :: T.Text
+  , cuser_privilege :: Int
+  }
 
 data Stock = Stock
   { stock_id   :: Int
@@ -221,10 +238,17 @@ exampleUser = User 1 "admin" "password" 1
 instance A.ToJSON User where
   toJSON (User user_id user_name user_password user_privilege) =
     A.object [ "id" .= user_id
-                 , "name" .= user_name
-                 , "passwd" .= user_password
-                 , "privilege" .= user_privilege
-                 ]
+             , "name" .= user_name
+             , "passwd" .= user_password
+             , "privilege" .= user_privilege
+             ]
+
+instance A.ToJSON CensoredUser where
+  toJSON (CensoredUser cuser_id cuser_name cuser_privilege) =
+    A.object [ "id" .= cuser_id
+             , "name" .= cuser_name
+             , "privilege" .= cuser_privilege
+             ]
 
 instance A.ToJSON Product where
   toJSON (Product product_id product_name product_price) =

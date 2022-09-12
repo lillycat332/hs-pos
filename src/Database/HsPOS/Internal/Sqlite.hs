@@ -63,7 +63,8 @@ import qualified System.IO.Unsafe as Unsafe
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
 import Database.HsPOS.Internal.Types
-
+import Control.Monad  (join)
+import Data.Bifunctor (bimap)
 
 -- SQL functions
 
@@ -114,7 +115,7 @@ tryCreateTables conn = do
   mapM_ (\x -> H.run conn' x []) q
   disconnect conn'
 
--- Add a product from the database
+-- Add a product into the database
 addProd :: String -> Int -> String -> Double -> IO ()
 addProd conn id name price = do
   conn' <- connectSqlite3 conn
@@ -122,22 +123,28 @@ addProd conn id name price = do
   r <- H.quickQuery' conn' q [toSql id, toSql name, toSql price]
   disconnect conn'
 
--- Remove a product
-removeProd :: String -> Int -> IO ()
-removeProd conn id = do
+
+sqlTuplify [id, name, pri]  = (id, name, pri)
+
+desqlU :: (SqlValue, SqlValue, SqlValue) -> (Int, String, Int)
+desqlU (x, y, z) = (fromSql x, fromSql y, fromSql z)
+
+desqlF :: (SqlValue, SqlValue, SqlValue) -> (Int, String, Double)
+desqlF (x, y, z) = (fromSql x, fromSql y, fromSql z)
+
+-- allUsers :: String -> [(Int, String, Int)]
+allUsers conn = do
   conn' <- connectSqlite3 conn
-  let q = "DELETE FROM products WHERE product_id = ?"
-  r <- H.quickQuery' conn' q [toSql id]
-  disconnect conn'
-  
--- getUsers :: String -> [IO User]
--- getUsers conn = do
---   conn' <- connectSqlite3 conn
---   let q = "SELECT user_name FROM users"
---   r <- H.quickQuery' conn q []
---   disconnect conn
---   let r' = head r
---   mapM fromSql r'
+  let q = "SELECT user_id, user_name, user_privilege FROM users"
+  r <- H.quickQuery' conn' q []
+  return $ map desqlU $ map sqlTuplify r
+
+-- allUsers :: String -> [(Int, String, Int)]
+allProds conn = do
+  conn' <- connectSqlite3 conn
+  let q = "SELECT * FROM products"
+  r <- H.quickQuery' conn' q []
+  return $ map desqlF $ map sqlTuplify r
 
 -- users = Unsafe.unsafePerformIO (getUsers "store.db")
 
