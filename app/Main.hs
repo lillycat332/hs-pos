@@ -36,7 +36,7 @@
 -}
 
 
-{-# LANGUAGE MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
+{-# LANGUAGE MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings, BangPatterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
 
@@ -65,7 +65,7 @@ import Text.Read (readMaybe)
 import Database.HsPOS.Internal.Sqlite
 import Database.HsPOS.Internal.Auth
 import Network.Wai.Middleware.HttpAuth
-import Data.SecureMem -- for constant-time comparison
+import Debug.Trace
 import Web.Scotty
     ( delete,
       file,
@@ -119,6 +119,7 @@ main :: IO ()
 main = do
   opts <- execParser opts
   let port = optPort opts
+  tryCreateTables $ optDb opts
 
   scotty port $ do
     -- Add policies to prevent directory traversal attacks.
@@ -127,7 +128,7 @@ main = do
     unless (optQuiet opts) $ middleware logStdoutDev
 
     -- Try these handlers when we recieve a connection
-    static >> allUsersHandler >> allProdsHandler >> restHandle >> saleHandle
+    static >> allUsersHandler >> allProdsHandler >> addProdHandler >> restHandle >> saleHandle
 
   where
     opts = info (args <**> helper)
@@ -158,6 +159,13 @@ allProdsHandler = do
   let prodsJSON = map A.toJSON $ map (\(x,y,z) -> Product x (T.pack y) z) prods
   get "/prods/all" $ json $ A.toJSON prodsJSON
 
+addProdHandler = do
+  post "/prods/" $ do
+    name  <- param "name"
+    price <- param "price"
+    let !x = Unsafe.unsafePerformIO $ addProd "store.db" name price
+    json x
+
 restHandle :: ScottyM ()
 restHandle = do
   post "/users/:u"   $ html "post"
@@ -165,7 +173,6 @@ restHandle = do
   put "/users/:u"    $ html "put"
 
   get "/prods/:u"    $ html "get"
-  post "/prods/:u"   $ html "post"
   delete "/prods/:u" $ html "delete"
   put "/prods/:u"    $ html "put"
 

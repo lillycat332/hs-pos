@@ -104,7 +104,7 @@ tryCreateTables :: String -> IO ()
 tryCreateTables conn = do
   conn' <- connectSqlite3 conn
   let q = [ "CREATE TABLE IF NOT EXISTS users (user_id INTEGER not null primary key autoincrement, user_name TEXT not null,user_password TEXT not null, user_privilege INTEGER not null)"
-          , "CREATE TABLE IF NOT EXISTS stock (product_id integer not null constraint stock_pk primary key autoincrementreferences products, in_stock integer)"
+          , "CREATE TABLE IF NOT EXISTS stock (product_id integer not null constraint stock_pk primary key autoincrement references products, in_stock integer)"
           , "CREATE TABLE IF NOT EXISTS sales (sales_id integer constraint sales_pk primary key autoincrement, sales_date date number_sold integer)"
           , "CREATE TABLE IF NOT EXISTS products (product_id INTEGER not null primary key autoincrement,product_name TEXT not null,product_price DOUBLE not null)"
           , "CREATE TABLE IF NOT EXISTS tills (till_id integer not null constraint tills_pk primary key autoincrement, till_name integer)"
@@ -112,16 +112,20 @@ tryCreateTables conn = do
           , "CREATE TABLE IF NOT EXISTS products_sales_xref (product_id integer references products, sales_id   integer constraint products_sales_xref_pk primary key references sales)"
           ]
 
-  mapM_ (\x -> H.run conn' x []) q
+  x <- mapM (\x -> H.run conn' x []) q
+  putStrLn $ show x
+  commit conn'
   disconnect conn'
 
 -- Add a product into the database
-addProd :: String -> Int -> String -> Double -> IO ()
-addProd conn id name price = do
+addProd :: String -> String -> Double -> IO Bool
+addProd conn name price = do
   conn' <- connectSqlite3 conn
-  let q = "INSERT INTO products VALUES (?, ?, ?)"
-  r <- H.quickQuery' conn' q [toSql id, toSql name, toSql price]
+  let q = "INSERT INTO products (product_name, product_price) VALUES (?, ?)"
+  r <- H.quickQuery' conn' q [toSql name, toSql price]
+  commit conn'
   disconnect conn'
+  return True
 
 
 sqlTuplify [id, name, pri]  = (id, name, pri)
