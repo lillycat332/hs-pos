@@ -40,67 +40,103 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
 
-
 module Database.HsPOS.Internal.Http where
 import Control.Applicative
-import Control.Monad (join, when, unless)
-import Data.Aeson ((.=))
-import Data.Int
-import Data.IORef
-import Data.Maybe (fromMaybe)
+import Control.Monad (join, when, unless, liftM)
 import Data.Monoid (mconcat)
 import Data.Semigroup ((<>))
-import Database.HDBC
-import Database.HDBC.Sqlite3 (connectSqlite3)
 import Network.HTTP.Types
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Network.Wai.Middleware.Static (addBase, noDots, staticPolicy, (>->))
 import Options.Applicative hiding (header)
 import qualified Data.Aeson as A
 import qualified Data.Text.Lazy as T
-import qualified Database.HDBC as H
-import qualified Options.Applicative as Opt
-import qualified System.IO.Unsafe as Unsafe
-import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
+import Control.Monad.IO.Class (liftIO)
 import Web.Scotty
     ( delete,
       file,
       get,
       html,
       json,
-      middleware,
       param,
       post,
       put,
       scotty,
       text,
       ScottyM )
-import Database.HsPOS.Internal.Sqlite (monthlySales, yearlySales)
+import Database.HsPOS.Internal.Sqlite
+import Database.HsPOS.Internal.Types
 
 -- Connection handlers
 
+-- | Serve any static pages
+static :: ScottyM ()
+static = get "/" $ file "./public/index.html"
+  -- Admin panel
+  -- get "/dashboard" $ file "./public/dash.html"
 
-home :: ScottyM ()
-home = get "/" $ file "./public/index.html"
+--searchHandler :: FilePath -> ScottyM ()
+searchHandler dbStr = do
+  get "/search/prods/:query" $ do
+    query  <- param "query"
+    result <- liftIO $ searchProds dbStr query
+    json $ result  
 
+-- | Returns a list of all users/products over HTTP
+userHandler :: FilePath -> ScottyM ()
+userHandler dbStr = do
+  get "/users/all" $ do
+    users <- liftIO (allUsers dbStr)
+    let usersJSON = map A.toJSON
+          $ map (\(x,y,z) -> CensoredUser x (T.pack y) z) users
+    json $ A.toJSON usersJSON
 
-adm :: ScottyM ()
-adm = get "/dashboard" $ file "./public/dash.html"
+  get "/users/:id" $ do
+    id   <- param "id"
+    user <- liftIO (getUser dbStr id)
+    let userJSON = A.toJSON
+          $ (\(x,y,z) -> CensoredUser x (T.pack y) z) user in 
+            json $ A.toJSON userJSON
 
-saleHandle :: ScottyM ()
-saleHandle = do
-  get "/sales/:mm/:yy/:id/" $ do
+prodHandler dbStr = do
+  get "/prods/:id/" $ do
     id <- param "id"
-    mm :: String <- param "mm"
-    yy :: String <- param "yy"
-    let mmyy = mm <> "-" <> yy
-    let a = Unsafe.unsafePerformIO (monthlySales "store.db" mmyy id)
-    text $ T.pack $ show a
-  
-  get "/sales/:yy/id/" $ do
-    yy :: String <- param "yy"
-    id <- param "id"
-    let a = Unsafe.unsafePerformIO (yearlySales "store.db" yy id)
-    text $ T.pack $ show a
+    x  <- liftIO $ getProd dbStr id
+    json $ (\(id,name,price) ->
+           A.toJSON $ Product id (T.pack name) price) x
 
+  get "/prods/all" $ do
+    prods <- liftIO (allProds dbStr)
+    let prodsJSON = map A.toJSON
+          $ map (\(x,y,z) -> Product x (T.pack y) z) prods
+    json $ A.toJSON prodsJSON
+
+  post "/prods/" $ do
+    name  <- param "name"
+    price <- param "price"
+    x     <- liftIO $ addProd dbStr name price
+    json x
+
+saleHandle :: String -> ScottyM ()
+saleHandle dbStr = do
+  get "/sales/:y/:m/:id/" $ do
+    {- Fetch the parameters from the url (ie. :date, :id in the form
+       http://localhost:3000/sales/2022/07/5) -}
+    id      <- param "id"
+    month   <- param "m"
+    year    <- param "y"
+    let date = year <> "-" <> month
+    sales   <- liftIO $ monthlySales dbStr date id
+    -- Convert the result to text, then send it over HTTP as a reply.
+    text $ T.pack $ show sales
+    
+  get "/sales/:y/:id/" $ do
+    {- Fetch the parameters from the url (ie. :date, :id in the form
+       http://localhost:3000/sales/2022-07/5) -}
+    id    <- param "id"
+    year  <- param "y"
+    
+    sales <- liftIO $ yearlySales dbStr year id
+    -- Convert the result to text, then send it over HTTP as a reply.
+    text $ T.pack $ show sales

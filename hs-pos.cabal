@@ -40,6 +40,7 @@ library
     exposed-modules:  Database.HsPOS.Internal.Auth
                     , Database.HsPOS.Internal.Types
                     , Database.HsPOS.Internal.Sqlite
+                    , Database.HsPOS.Internal.Http
 
 executable hs-pos
     main-is:          Main.hs

@@ -42,53 +42,25 @@
 
 module Main where
 import Control.Applicative
-import Control.Monad (join, when, unless)
+import Control.Monad (join, when, unless, liftM)
+import Control.Monad.IO.Class ( liftIO )
 import Data.Aeson ((.=))
-import Data.Int
-import Data.IORef
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Monoid (mconcat)
 import Data.Semigroup ((<>))
-import Database.HDBC
-import Database.HDBC.Sqlite3 (connectSqlite3)
-import Network.HTTP.Types
+import Database.HsPOS.Internal.Http
+import Database.HsPOS.Internal.Sqlite (tryCreateTables)
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Network.Wai.Middleware.Static (addBase, noDots, staticPolicy, (>->))
 import Options.Applicative hiding (header)
-import qualified Data.Aeson as A
-import qualified Data.Text.Lazy as T
-import qualified Database.HDBC as H
-import qualified Options.Applicative as Opt
-import qualified System.IO.Unsafe as Unsafe
-import System.Environment (lookupEnv)
-import Text.Read (readMaybe)
-import Database.HsPOS.Internal.Sqlite
-import Database.HsPOS.Internal.Auth
-import Network.Wai.Middleware.HttpAuth
-import Debug.Trace
-import Control.Monad ( liftM )
-import Control.Monad.IO.Class ( liftIO )
-import Web.Scotty
-    ( delete,
-      file,
-      get,
-      html,
-      json,
-      middleware,
-      param,
-      post,
-      put,
-      scotty,
-      text,
-      ScottyM )
-
+import qualified Options.Applicative as O
+import Web.Scotty ( middleware, scotty, ScottyM )
 
 data Args = Args
   { optDb     :: String
   , optPort   :: Int
   , optQuiet  :: Bool
   }
-
 
 -- | This defines a parser for command line arguments.
 args :: Parser Args
@@ -119,186 +91,39 @@ args = Args <$>
 -- | This function is called by the GHC runtime when the program is run.
 main :: IO ()
 main = do
+  -- Shadow opts with a parsed version of it.
   opts <- execParser opts
-  let port = optPort opts
+  -- Try and create all the tables we want.
   tryCreateTables $ optDb opts
-  x <- getProdName 1
-  putStrLn $ show x
+  -- These are lexically bound to the context of the following do block.
+  let port = optPort opts
+      dbStr = optDb opts
+      in
+        {- Run the webserver on the given port. The body of this block
+           sets policies/options, and then handles setting routes from
+           the handlers. -}
+        scotty port $ do
+          -- Add policies to prevent directory traversal attacks.
+          middleware $ staticPolicy (noDots >-> addBase "public")
+          -- unless we are using the option -q/--quiet, log to stdout.
+          unless (optQuiet opts) $ middleware logStdoutDev
 
-  scotty port $ do
-    -- Add policies to prevent directory traversal attacks.
-    middleware $ staticPolicy (noDots >-> addBase "public")
-    -- unless we are using the option -q/--quiet, log to stdout.
-    unless (optQuiet opts) $ middleware logStdoutDev
-
-    -- Try these handlers when we recieve a connection
-    static >> allUsersHandler >> allProdsHandler >> addProdHandler >> restHandle >> saleHandle
-
+          {- Try these handlers when we recieve a connection. The >>,
+             or "then" operator is a way of sequencing multiple
+             handlers. This effectively means: try static, then
+             allUsersHandler, etc. Each handler handles a route and
+             what should be done when a client accesses them.
+          -}
+          
+          static >> userHandler     dbStr
+                 >> prodHandler     dbStr
+                 >> searchHandler   dbStr
+                 >> saleHandle      dbStr
+                 -- >> prodNameHandler dbStr
   where
+    -- Provide the parser to main.
     opts = info (args <**> helper)
       (  fullDesc
       <> progDesc "Run a server for an EPOS system, with a REST API and Database."
-      <> Opt.header "hs-pos -- A Haskell EPOS backend"
+      <> O.header "hs-pos -- A Haskell EPOS backend"
       )
-
--- Connection handlers
-
--- serve the main static page
-static :: ScottyM ()
-static = get "/" $ file "./public/index.html"
-  -- get "/dashboard" $ file "./public/dash.html"
-
--- conv :: IO A.Value
--- conv = do
---   x <-  allUsers "store.db"
---   return map A.toJSON $ map tupleToCUser x
-
-allUsersHandler :: ScottyM ()
-allUsersHandler = do
-  get "/users/all" $ do
-    users <- liftIO (allUsers "store.db")
-    let usersJSON = map A.toJSON $ map (\(x,y,z) -> CensoredUser x (T.pack y) z) users
-    json $ A.toJSON usersJSON
-
-allProdsHandler :: ScottyM ()
-allProdsHandler = do
-  get "/prods/all" $ do
-    prods <- liftIO (allProds "store.db")
-    let prodsJSON = map A.toJSON $ map (\(x,y,z) -> Product x (T.pack y) z) prods
-    json $ A.toJSON prodsJSON
-
---allProdsHandler' :: ScottyM ()
---allProdsHandler' = do
- -- prods <- getProdNames
- -- get "/prods/all" $ json $ A.toJSON prods
-  
-addProdHandler = do
-  post "/prods/" $ do
-    name  <- param "name"
-    price <- param "price"
-    x     <- liftIO $ addProd "store.db" name price
-    json x
-    
-prodHandler :: ScottyM ()
-prodHandler = do
-  get "/prods/:id" $ do
-    id   <- param "id"
-    name <- liftIO (getProdName id)
-    json name
-
-restHandle :: ScottyM ()
-restHandle = do
-  post "/users/:u"   $ html "post"
-  delete "/users/:u" $ html "delete"
-  put "/users/:u"    $ html "put"
-
-  get "/prods/:u"    $ html "get"
-  delete "/prods/:u" $ html "delete"
-  put "/prods/:u"    $ html "put"
-
-saleHandle :: ScottyM ()
-saleHandle = get "/sales/:date/:id/" $ do
-  id <- param "id"
-  date :: String <- param "date"
-  let a = Unsafe.unsafePerformIO (monthlySales "store.db" date id)
-  text $ T.pack $ show a
-
--- SQL Tables
-
-
-data Product = Product
-  { product_id    :: Int
-  , product_name  :: T.Text
-  , product_price :: Double
-  }
-
-data User = User
-  { user_id        :: Int
-  , user_name      :: T.Text
-  , user_password  :: T.Text
-  , user_privilege :: Int
-  }
-
-data CensoredUser = CensoredUser
-  { cuser_id        :: Int
-  , cuser_name      :: T.Text
-  , cuser_privilege :: Int
-  }
-
-data Stock = Stock
-  { stock_id   :: Int
-  , in_stock   :: T.Text
-  }
-
-
-data Sale = Sale
-  { sales_id    :: Int
-  , sales_date  :: String
-  , number_sold :: Int
-  }
-
-
-data Products_sales_xref = Products_sales_xref
-  { xref_product_id :: Int  -- Foreign key to product_id
-  , xref_sales_id   :: Int  -- Foreign key to sales_id
-  }
-
-
-data Till = Till
-  { till_id   :: Int
-  , till_name :: T.Text
-  }
-
-
-data User_till_xref = User_till_xref
-  { xref_user_id   :: Int  -- Foreign key to user_id
-  , xref_till_id   :: Int  -- Foreign key to till_id
-  }
-
-exampleUser :: User
-exampleUser = User 1 "admin" "password" 1
-
--- Marshalling
--- To JSON
-
-
-instance A.ToJSON User where
-  toJSON (User user_id user_name user_password user_privilege) =
-    A.object [ "id" .= user_id
-             , "name" .= user_name
-             , "passwd" .= user_password
-             , "privilege" .= user_privilege
-             ]
-
-instance A.ToJSON CensoredUser where
-  toJSON (CensoredUser cuser_id cuser_name cuser_privilege) =
-    A.object [ "id" .= cuser_id
-             , "name" .= cuser_name
-             , "privilege" .= cuser_privilege
-             ]
-
-instance A.ToJSON Product where
-  toJSON (Product product_id product_name product_price) =
-    A.object [ "id" .= product_id
-             , "name" .= product_name
-             , "price" .= product_price
-             ]
-
-instance A.ToJSON Stock where
-  toJSON (Stock stock_id in_stock) =
-    A.object [ "id" .= stock_id
-             , "in_stock" .= in_stock
-             ]
-
-instance A.ToJSON Sale where
-  toJSON (Sale sales_id sales_date number_sold) =
-    A.object [ "id" .= sales_id
-             , "date" .= sales_date
-             , "number_sold" .= number_sold
-             ]
-
-instance A.ToJSON Till where
-  toJSON (Till till_id till_name) =
-    A.object [ "id" .= till_id
-             , "name" .= till_name
-             ]

@@ -50,29 +50,10 @@
 
 
 module Database.HsPOS.Internal.Types where      
-import Control.Applicative
-import Control.Applicative ((<$>))
-import Control.Monad (join)
-import Data.Aeson ((.=))
-import Data.Int
-import Data.IORef
-import Data.Maybe (fromMaybe)
-import Data.Monoid (mconcat)
-import Data.Semigroup ((<>))
-import Database.HDBC
-import Database.HDBC.Sqlite3 (connectSqlite3)
-import Network.HTTP.Types
-import Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import Network.Wai.Middleware.Static (addBase, noDots, staticPolicy, (>->))
-import Options.Applicative hiding (header)
 import qualified Data.Aeson as A
 import qualified Data.Text.Lazy as T
-import qualified Database.HDBC as H
-import qualified Options.Applicative as Opt
-import qualified System.IO.Unsafe as Unsafe
-import System.Environment (lookupEnv)
-import Text.Read (readMaybe)
-import Web.Scotty
+import Data.Aeson ((.=))
+-- SQL Tables
 
 data Product = Product
   { product_id    :: Int
@@ -85,73 +66,87 @@ data User = User
   , user_name      :: T.Text
   , user_password  :: T.Text
   , user_privilege :: Int
-  } 
+  }
 
+-- Same as User, but excluding the Password field (for sending to client)
+-- Not actually a table, just an "illusion" of one, for the client.
+-- Sort of like a view.
+data CensoredUser = CensoredUser
+  { cuser_id        :: Int
+  , cuser_name      :: T.Text
+  , cuser_privilege :: Int
+  }
 
 data Stock = Stock
   { stock_id   :: Int
   , in_stock   :: T.Text
-  } 
-
+  }
 
 data Sale = Sale
   { sales_id    :: Int
   , sales_date  :: String
   , number_sold :: Int
-  } 
-
+  }
 
 data Products_sales_xref = Products_sales_xref
   { xref_product_id :: Int  -- Foreign key to product_id
   , xref_sales_id   :: Int  -- Foreign key to sales_id
-  } 
+  }
 
 
 data Till = Till
   { till_id   :: Int
   , till_name :: T.Text
-  } 
+  }
 
 
 data User_till_xref = User_till_xref
   { xref_user_id   :: Int  -- Foreign key to user_id
   , xref_till_id   :: Int  -- Foreign key to till_id
-  } 
-
--- Marshalling
--- To JSON
-
+  }
+  
+{- Marshalling To JSON
+   These convert SQL table objects as above into JSON objects and vice
+   versa.
+-}
 
 instance A.ToJSON User where
-  toJSON (User user_id user_name user_password user_privilege) = 
+  toJSON (User user_id user_name user_password user_privilege) =
     A.object [ "id" .= user_id
-                 , "name" .= user_name
-                 , "passwd" .= user_password
-                 , "privilege" .= user_privilege
-                 ]
+             , "name" .= user_name
+             , "passwd" .= user_password
+             , "privilege" .= user_privilege
+             ]
+
+instance A.ToJSON CensoredUser where
+  toJSON (CensoredUser cuser_id cuser_name cuser_privilege) =
+    A.object [ "id" .= cuser_id
+             , "name" .= cuser_name
+             , "privilege" .= cuser_privilege
+             ]
 
 instance A.ToJSON Product where
-  toJSON (Product product_id product_name product_price) = 
+  toJSON (Product product_id product_name product_price) =
     A.object [ "id" .= product_id
              , "name" .= product_name
              , "price" .= product_price
              ]
 
 instance A.ToJSON Stock where
-  toJSON (Stock stock_id in_stock) = 
+  toJSON (Stock stock_id in_stock) =
     A.object [ "id" .= stock_id
              , "in_stock" .= in_stock
              ]
 
 instance A.ToJSON Sale where
-  toJSON (Sale sales_id sales_date number_sold) = 
+  toJSON (Sale sales_id sales_date number_sold) =
     A.object [ "id" .= sales_id
              , "date" .= sales_date
              , "number_sold" .= number_sold
              ]
 
 instance A.ToJSON Till where
-  toJSON (Till till_id till_name) = 
+  toJSON (Till till_id till_name) =
     A.object [ "id" .= till_id
              , "name" .= till_name
              ]

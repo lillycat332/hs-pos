@@ -41,75 +41,58 @@
 {-# HLINT ignore "Use camelCase" #-}
 
 module Database.HsPOS.Internal.Sqlite where
-import Control.Applicative
 import Control.Monad (join, when, unless)
-import Data.Aeson ((.=))
-import Data.Int
-import Data.IORef
 import Data.Maybe (fromMaybe)
 import Data.Monoid (mconcat)
 import Data.Semigroup ((<>))
 import Database.HDBC
 import Database.HDBC.Sqlite3 (connectSqlite3)
-import Network.HTTP.Types
-import Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import Network.Wai.Middleware.Static (addBase, noDots, staticPolicy, (>->))
-import Options.Applicative hiding (header)
 import qualified Data.Aeson as A
-import qualified Data.Text.Lazy as T
-import qualified Database.HDBC as H
-import qualified Options.Applicative as Opt
-import qualified System.IO.Unsafe as Unsafe
 import System.Environment (lookupEnv)
-import Text.Read (readMaybe)
-import Database.HsPOS.Internal.Types
-import Control.Monad  (join)
-import Data.Bifunctor (bimap)
 
 -- SQL functions
 
-
 -- | monthlySales takes:
--- conn, a connection,
+-- dbStr, a filepath to the database,
 -- d, a date in the format "YYYY-MM",
 -- id, a product id, 
 -- and returns the total sales for that month.
-monthlySales :: String -> String -> Int -> IO Int
-monthlySales conn d id = do
-  conn' <- connectSqlite3 conn
+monthlySales :: FilePath -> String -> Int -> IO Int
+monthlySales dbStr d id = do
+  conn <- connectSqlite3 dbStr
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
-  r <- H.quickQuery' conn' q [toSql d, toSql id]
-  disconnect conn'
+  r <- quickQuery' conn q [toSql d, toSql id]
+  disconnect conn
   let r'   = head r
   let r''  = head r'
   return (fromSql r'' :: Int)
 
--- | yearlySales takes:
--- conn, a connection,
--- d, a date in the format "YYYY",
--- id, a product id, 
--- and returns the total sales of said product id for that year.
-yearlySales :: String -> String -> Int -> IO Int
-yearlySales conn d id = do
-  conn' <- connectSqlite3 conn
+-- | yearlySales returns the total sales of said product id for that year.
+yearlySales :: FilePath -> String -> Int -> IO Int
+yearlySales dbStr d id = do
+  conn <- connectSqlite3 dbStr
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y', sales_date) = (?) AND products_sales_xref.product_id = (?)"
-  r <- H.quickQuery' conn' q [toSql d, toSql id]
-  disconnect conn'
+  r <- quickQuery' conn q [toSql d, toSql id]
+  disconnect conn
   let r'   = head r
   let r''  = head r'
   return (fromSql r'' :: Int)
 
-getProdName :: Int -> IO [String]
-getProdName id = do
-  conn <- connectSqlite3 "store.db"
+{- | getProdName returns an IO [String] with the product name of the
+     products matching the given product ID
+-}
+getProdName :: FilePath -> Int -> IO [String]
+getProdName dbStr id = do
+  conn <- connectSqlite3 dbStr
   let query = "select product_name from products where product_id = (?)"
-  r <- H.quickQuery' conn query [toSql id]
+  r <- quickQuery' conn query [toSql id]
   disconnect conn
   return (map fromSql (head r))
 
-tryCreateTables :: String -> IO ()
-tryCreateTables conn = do
-  conn' <- connectSqlite3 conn
+-- | Creates the requisite tables for the database.
+tryCreateTables :: FilePath -> IO ()
+tryCreateTables dbStr = do
+  conn <- connectSqlite3 dbStr
   let q = [ "CREATE TABLE IF NOT EXISTS users (user_id INTEGER not null primary key autoincrement, user_name TEXT not null,user_password TEXT not null, user_privilege INTEGER not null)"
           , "CREATE TABLE IF NOT EXISTS stock (product_id integer not null constraint stock_pk primary key autoincrement references products, in_stock integer)"
           , "CREATE TABLE IF NOT EXISTS sales (sales_id integer constraint sales_pk primary key autoincrement, sales_date date number_sold integer)"
@@ -119,44 +102,81 @@ tryCreateTables conn = do
           , "CREATE TABLE IF NOT EXISTS products_sales_xref (product_id integer references products, sales_id   integer constraint products_sales_xref_pk primary key references sales)"
           ]
 
-  x <- mapM (\x -> H.run conn' x []) q
+  x <- mapM (\x -> run conn x []) q
   putStrLn $ show x
-  commit conn'
-  disconnect conn'
+  commit conn
+  disconnect conn
 
--- Add a product into the database
+-- | Add a product into the database, returning True if it worked.
 addProd :: String -> String -> Double -> IO Bool
-addProd conn name price = do
-  conn' <- connectSqlite3 conn
+addProd dbStr name price = do
+  conn <- connectSqlite3 dbStr
   let q = "INSERT INTO products (product_name, product_price) VALUES (?, ?)"
-  r <- H.quickQuery' conn' q [toSql name, toSql price]
-  commit conn'
-  disconnect conn'
-  return True
-
+  r <- quickQuery' conn q [toSql name, toSql price]
+  commit conn
+  disconnect conn
+  return $ if ((length $ head r) >= 0) then False else True
 
 sqlTuplify [id, name, pri]  = (id, name, pri)
 
+{- | "DeSQL" a user (or any other value in the form (Int,String,Int),
+     ie. turn it from SQL types into native haskell types. -}
 desqlU :: (SqlValue, SqlValue, SqlValue) -> (Int, String, Int)
 desqlU (x, y, z) = (fromSql x, fromSql y, fromSql z)
 
+{- | "DeSQL" a product (or any other value in the form (Int,String,Double),
+     ie. turn it from SQL types into native haskell types. -}
 desqlF :: (SqlValue, SqlValue, SqlValue) -> (Int, String, Double)
 desqlF (x, y, z) = (fromSql x, fromSql y, fromSql z)
 
 -- allUsers :: String -> [(Int, String, Int)]
-allUsers conn = do
-  conn' <- connectSqlite3 conn
+allUsers dbStr = do
+  conn <- connectSqlite3 dbStr
   let q = "SELECT user_id, user_name, user_privilege FROM users"
-  r <- H.quickQuery' conn' q []
+  r    <- quickQuery' conn q []
+  disconnect conn
   return $ map desqlU $ map sqlTuplify r
 
--- allUsers :: String -> [(Int, String, Int)]
-allProds conn = do
-  conn' <- connectSqlite3 conn
-  let q = "SELECT * FROM products"
-  r <- H.quickQuery' conn' q []
-  return $ map desqlF $ map sqlTuplify r
+getProd :: String -> Int -> IO (Int, String, Double)
+getProd dbStr id = do
+  conn   <- connectSqlite3 dbStr
+  let q   = "SELECT * FROM products where product_id=(?)"
+  result <- quickQuery' conn q [toSql id]
+  disconnect conn
+  return $ head $ map desqlF $ map sqlTuplify result
 
--- users = Unsafe.unsafePerformIO (getUsers "store.db")
+getUser :: String -> Int -> IO (Int, String, Int)
+getUser dbStr id = do
+  conn   <- connectSqlite3 dbStr
+  let q   = "SELECT * FROM user where user_id=(?)"
+  result <- quickQuery' conn q [toSql id]
+  disconnect conn
+  return $ head $ map desqlU $ map sqlTuplify result
+
+-- allUsers :: String -> [(Int, String, Int)]
+allProds dbStr = do
+  conn   <- connectSqlite3 dbStr
+  let q   = "SELECT * FROM products"
+  result <- quickQuery' conn q []
+  disconnect conn
+  return $ map desqlF $ map sqlTuplify result
+
+searchProds :: FilePath -> String -> IO [[Int]]
+searchProds dbStr term = do
+  conn      <- connectSqlite3 dbStr
+  let query  = "select product_id from products where product_name like (?)"
+  let term'  = "%" <> term <> "%"
+  result    <- quickQuery' conn query [toSql term']
+  disconnect conn
+  return $ map (\x -> map fromSql x) result
+
+searchUsers :: FilePath -> String -> IO [[Int]]
+searchUsers dbStr term = do
+  conn      <- connectSqlite3 dbStr
+  let query  = "select user_id from products where user_name like (?)"
+  let term'  = "%" <> term <> "%"
+  result    <- quickQuery' conn query [toSql term']
+  disconnect conn
+  return $ map (\x -> map fromSql x) result
 
 -- SELECT till_name FROM till WHERE till.till_id=(SELECT al.till_id FROM allowed_till al where al.emp_id = (SELECT emp.emp_id FROM employees emp WHERE emp.name="example"))
