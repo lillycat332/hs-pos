@@ -36,7 +36,8 @@ library
                     , optparse-applicative
                     , convertible
                     , bytestring
-                    , securemem
+                    , tuple
+                    , password
     exposed-modules:  Database.HsPOS.Internal.Auth
                     , Database.HsPOS.Internal.Types
                     , Database.HsPOS.Internal.Sqlite

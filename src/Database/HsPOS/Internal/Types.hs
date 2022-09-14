@@ -53,6 +53,7 @@ module Database.HsPOS.Internal.Types where
 import qualified Data.Aeson as A
 import qualified Data.Text.Lazy as T
 import Data.Aeson ((.=))
+import GHC.Generics
 -- SQL Tables
 
 data Product = Product
@@ -75,36 +76,51 @@ data CensoredUser = CensoredUser
   { cuser_id        :: Int
   , cuser_name      :: T.Text
   , cuser_privilege :: Int
-  }
+  } deriving (Eq, Ord, Show)
 
 data Stock = Stock
   { stock_id   :: Int
   , in_stock   :: T.Text
-  }
+  } deriving (Eq, Ord, Show)
 
 data Sale = Sale
   { sales_id    :: Int
   , sales_date  :: String
   , number_sold :: Int
-  }
+  } deriving (Eq, Ord, Show)
 
 data Products_sales_xref = Products_sales_xref
   { xref_product_id :: Int  -- Foreign key to product_id
   , xref_sales_id   :: Int  -- Foreign key to sales_id
-  }
-
+  } deriving (Eq, Ord, Show)
 
 data Till = Till
   { till_id   :: Int
   , till_name :: T.Text
-  }
-
+  } deriving (Eq, Ord, Show)
 
 data User_till_xref = User_till_xref
   { xref_user_id   :: Int  -- Foreign key to user_id
   , xref_till_id   :: Int  -- Foreign key to till_id
-  }
-  
+  } deriving (Eq, Ord, Show)
+
+data Date = Date
+  { dateYear  :: Int
+  , dateMonth :: Int
+  , dateDay   :: Int
+  } deriving (Eq, Ord, Show)
+
+data Day = Day { dayHour   :: Int
+               , dayMinute :: Int
+               , daySecond :: Int
+               } deriving (Eq, Ord, Show)
+
+data Request = Request { requestName :: String
+                       , requestPass :: String
+                       } deriving (Eq, Ord, Show, Read, Generic)
+instance A.ToJSON Request
+instance A.FromJSON Request
+
 {- Marshalling To JSON
    These convert SQL table objects as above into JSON objects and vice
    versa.

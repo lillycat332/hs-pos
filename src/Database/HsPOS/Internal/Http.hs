@@ -51,7 +51,7 @@ import Network.Wai.Middleware.Static (addBase, noDots, staticPolicy, (>->))
 import Options.Applicative hiding (header)
 import qualified Data.Aeson as A
 import qualified Data.Text.Lazy as T
-import Text.Read (readMaybe)
+import Data.Maybe (fromMaybe)
 import Control.Monad.IO.Class (liftIO)
 import Web.Scotty
     ( delete,
@@ -59,12 +59,14 @@ import Web.Scotty
       get,
       html,
       json,
+      jsonData,
       param,
       post,
       put,
       scotty,
       text,
-      ScottyM )
+      ScottyM,
+      ActionM)
 import Database.HsPOS.Internal.Sqlite
 import Database.HsPOS.Internal.Types
 
@@ -87,17 +89,13 @@ searchHandler dbStr = do
 userHandler :: FilePath -> ScottyM ()
 userHandler dbStr = do
   get "/users/all" $ do
-    users <- liftIO (allUsers dbStr)
-    let usersJSON = map A.toJSON
-          $ map (\(x,y,z) -> CensoredUser x (T.pack y) z) users
-    json $ A.toJSON usersJSON
+    users <- liftIO (allCUsers dbStr)
+    json $ map A.toJSON users
 
   get "/users/:id" $ do
     id   <- param "id"
-    user <- liftIO (getUser dbStr id)
-    let userJSON = A.toJSON
-          $ (\(x,y,z) -> CensoredUser x (T.pack y) z) user in 
-            json $ A.toJSON userJSON
+    user <- liftIO (getCUser dbStr id)
+    json $ A.toJSON user
 
 prodHandler dbStr = do
   get "/prods/:id/" $ do
@@ -129,14 +127,60 @@ saleHandle dbStr = do
     let date = year <> "-" <> month
     sales   <- liftIO $ monthlySales dbStr date id
     -- Convert the result to text, then send it over HTTP as a reply.
-    text $ T.pack $ show sales
+    json $ sales
+
+  get "/sales/:y/:m/to/:y2/:m2/:id/" $ do
+    {- Fetch the parameters from the url (ie. :date, :id in the form
+       http://localhost:3000/sales/2022/07/5) -}
+    id       <- param "id"
+    month    <- param "m"  
+    month2   <- param "m2" 
+    year     <- param "y"  
+    year2    <- param "y2"
+    let date1 = year  <> "-" <> month
+    let date2 = year2 <> "-" <> month2
+    sales    <- liftIO $ rangeSales dbStr date1 date2 id
+    -- Convert the result to text, then send it over HTTP as a reply.
+    json $ sales
+
+  get "/sales/total/:y/:m/:id/" $ do
+    {- Fetch the parameters from the url (ie. :date, :id in the form
+       http://localhost:3000/sales/2022/07/5) -}
+    id      <- param "id"
+    month   <- param "m"
+    year    <- param "y"
+    let date = year <> "-" <> month
+    sales   <- liftIO $ monthlyTotalSales dbStr date id
+    -- Convert the result to text, then send it over HTTP as a reply.
+    json $ sales
     
   get "/sales/:y/:id/" $ do
     {- Fetch the parameters from the url (ie. :date, :id in the form
        http://localhost:3000/sales/2022-07/5) -}
     id    <- param "id"
     year  <- param "y"
-    
     sales <- liftIO $ yearlySales dbStr year id
     -- Convert the result to text, then send it over HTTP as a reply.
     text $ T.pack $ show sales
+
+  post "/sales/:y/:m/:d/:quant/:id/" $ do
+    id    <- param "id"
+    num   <- param "quant"
+    year  <- param "y"
+    month <- param "m"
+    day   <- param "d"
+    let date :: String = year <> "-" <> month <> "-" <> day
+    ok    <- liftIO $ makeSale dbStr date id num
+    json ok
+
+login = do
+  post "/tawa-insa/" $ do
+    -- We want the JSON body of the request, which should contain the
+    -- username and password.
+    req <- jsonData :: ActionM Request
+
+    -- Now that we've gotten the request, let's make sure it's valid.
+    ok <- validateCredentials req
+
+    return req
+    

@@ -16,3 +16,9 @@
 * Refactor some code
 * Formatting
 * Begin factoring some of the code into separate files - this is a work in progress
+
+## 3.0 -- 2022-09-14
+
+* Major refactoring
+* Expanded API
+* Generally tidier codebase

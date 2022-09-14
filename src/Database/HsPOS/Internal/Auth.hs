@@ -44,7 +44,14 @@ module Database.HsPOS.Internal.Auth where
 import qualified Data.Text.Lazy           as T
 import           Web.Scotty               as S
 import           Network.Wai.Middleware.HttpAuth
-import           Data.SecureMem -- for constant-time comparison
 import           Database.HsPOS.Internal.Sqlite
+import           Database.HsPOS.Internal.Types
+import qualified Data.Password.Bcrypt     as P
 
 -- authMiddleware = basicAuth (\u p -> return $ u == "user" && secureMemFromByteString p == password) "Login"
+
+--validateCredentials creds = do
+  --let pw = P.mkPassword (requestPass creds)
+  
+
+  
