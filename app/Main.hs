@@ -112,8 +112,7 @@ main = do
              or "then" operator is a way of sequencing multiple
              handlers. This effectively means: try static, then
              allUsersHandler, etc. Each handler handles a route and
-             what should be done when a client accesses them.
-          -}
+             what should be done when a client accesses them.  -}
           
           static >> userHandler     dbStr
                  >> prodHandler     dbStr
