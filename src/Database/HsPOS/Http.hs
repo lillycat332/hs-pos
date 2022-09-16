@@ -1,6 +1,6 @@
 {- 
   hs-pos
-  Main.hs
+  Http.hs
   Created by Lilly Cham
 
   Copyright (c) 2022, Lilly Cham
@@ -36,39 +36,47 @@
 -}
 
 
-{-# LANGUAGE MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
+{-# LANGUAGE Trustworthy, MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
 
-module Database.HsPOS.Internal.Http where
+module Database.HsPOS.Http where
 import Control.Applicative
 import Control.Monad (join, when, unless, liftM)
 import Data.Monoid (mconcat)
 import Data.Semigroup ((<>))
 import Network.HTTP.Types
+import Network.HTTP.Types.Status (status400)
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import Network.Wai.Middleware.Static (addBase, noDots, staticPolicy, (>->))
+import Network.Wai.Middleware.Static (addBase
+                                     , noDots
+                                     , staticPolicy
+                                     , (>->))
 import Options.Applicative hiding (header)
 import qualified Data.Aeson as A
 import qualified Data.Text.Lazy as T
 import Data.Maybe (fromMaybe)
 import Control.Monad.IO.Class (liftIO)
-import Web.Scotty
-    ( delete,
-      file,
-      get,
-      html,
-      json,
-      jsonData,
-      param,
-      post,
-      put,
-      scotty,
-      text,
-      ScottyM,
-      ActionM)
-import Database.HsPOS.Internal.Sqlite
-import Database.HsPOS.Internal.Types
+import Control.Exception (throw, try)
+import Web.Scotty ( delete
+                  , file
+                  , get
+                  , html
+                  , json
+                  , jsonData
+                  , param
+                  , post
+                  , put
+                  , scotty
+                  , status
+                  , text
+                  , next
+                  , finish
+                  , ScottyM
+                  , ActionM )
+import Database.HsPOS.Sqlite
+import Database.HsPOS.Types
+import Database.HsPOS.Auth
 
 -- Connection handlers
 
@@ -99,15 +107,13 @@ userHandler dbStr = do
 
 prodHandler dbStr = do
   get "/prods/:id/" $ do
-    id <- param "id"
-    x  <- liftIO $ getProd dbStr id
-    json $ (\(id,name,price) ->
-           A.toJSON $ Product id (T.pack name) price) x
+    id    <- param "id"
+    prod  <- liftIO $ getProd dbStr id
+    json $ A.toJSON prod
 
   get "/prods/all" $ do
     prods <- liftIO (allProds dbStr)
-    let prodsJSON = map A.toJSON
-          $ map (\(x,y,z) -> Product x (T.pack y) z) prods
+    let prodsJSON = map A.toJSON prods
     json $ A.toJSON prodsJSON
 
   post "/prods/" $ do
@@ -173,14 +179,16 @@ saleHandle dbStr = do
     ok    <- liftIO $ makeSale dbStr date id num
     json ok
 
-login = do
+loginHandle :: FilePath -> ScottyM ()
+loginHandle dbStr = do
   post "/tawa-insa/" $ do
     -- We want the JSON body of the request, which should contain the
     -- username and password.
-    req <- jsonData :: ActionM Request
-
+    req :: Request <- jsonData
+                       
     -- Now that we've gotten the request, let's make sure it's valid.
-    ok <- validateCredentials req
+    let ok = validateCredentials req
 
-    return req
+    when (not ok) (status status400 >> finish)
+    text "I'm in."
     

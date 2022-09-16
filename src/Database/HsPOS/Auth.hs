@@ -1,6 +1,6 @@
 {- 
   hs-pos
-  Main.hs
+  Auth.hs
   Created by Lilly Cham on 7/5/22.
 
   Copyright (c) 2022, Lilly Cham
@@ -36,22 +36,19 @@
 -}
 
 
-{-# LANGUAGE MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
+{-# LANGUAGE Safe, ScopedTypeVariables, OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
 
-module Database.HsPOS.Internal.Auth where
+module Database.HsPOS.Auth where
 import qualified Data.Text.Lazy           as T
-import           Web.Scotty               as S
-import           Network.Wai.Middleware.HttpAuth
-import           Database.HsPOS.Internal.Sqlite
-import           Database.HsPOS.Internal.Types
-import qualified Data.Password.Bcrypt     as P
+import           Database.HsPOS.Types
+--import qualified Data.Password.Bcrypt     as P
 
 -- authMiddleware = basicAuth (\u p -> return $ u == "user" && secureMemFromByteString p == password) "Login"
 
---validateCredentials creds = do
-  --let pw = P.mkPassword (requestPass creds)
+validateCredentials creds = True
+  -- let pw = P.mkPassword (requestPass creds)
   
 
   

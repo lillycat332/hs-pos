@@ -1,6 +1,6 @@
 cabal-version:      2.4
 name:               hs-pos
-version:            1.0.0.0
+version:            2.1.0.0
 
 
 synopsis:           Point of Sale system backend
@@ -23,7 +23,7 @@ extra-source-files: CHANGELOG.md
 library
     hs-source-dirs:   src
     default-language: Haskell2010
-    build-depends:    base ^>=4.15.1.0 
+    build-depends:    base ^>=4.16.2.0 
                     , scotty
                     , wai
                     , wai-extra
@@ -35,29 +35,26 @@ library
                     , text
                     , optparse-applicative
                     , convertible
-                    , bytestring
                     , tuple
-                    , password
-    exposed-modules:  Database.HsPOS.Internal.Auth
-                    , Database.HsPOS.Internal.Types
-                    , Database.HsPOS.Internal.Sqlite
-                    , Database.HsPOS.Internal.Http
+                    -- , password
+    exposed-modules:  Database.HsPOS.Auth
+                    , Database.HsPOS.Types
+                    , Database.HsPOS.Sqlite
+                    , Database.HsPOS.Http
+                    , Database.HsPOS.Util
 
 executable hs-pos
     main-is:          Main.hs
-    build-depends:    base ^>=4.15.1.0 
+    build-depends:    base ^>=4.16.2.0 
                     , scotty
                     , wai
                     , wai-extra
                     , wai-middleware-static
                     , aeson
-                    , HDBC
-                    , HDBC-sqlite3
                     , http-types
                     , text
                     , optparse-applicative
                     , convertible
                     , hs-pos
-                    , securemem
     hs-source-dirs:   app
     default-language: Haskell2010

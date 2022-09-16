@@ -1,6 +1,6 @@
 {- 
   hs-pos
-  Database.hs
+  Types.hs
   Created by Lilly Cham on 7/5/22.
 
   Copyright (c) 2022, Lilly Cham
@@ -36,7 +36,8 @@
 -}
 
 
-{-# LANGUAGE DeriveAnyClass
+{-# LANGUAGE Trustworthy
+           , DeriveAnyClass
            , DeriveGeneric
            , MultiParamTypeClasses
            , ScopedTypeVariables 
@@ -46,10 +47,11 @@
            , OverloadedStrings
            , TypeApplications
            , OverloadedLabels
+           , OverloadedRecordDot
 #-}
 
 
-module Database.HsPOS.Internal.Types where      
+module Database.HsPOS.Types where      
 import qualified Data.Aeson as A
 import qualified Data.Text.Lazy as T
 import Data.Aeson ((.=))
@@ -60,14 +62,21 @@ data Product = Product
   { product_id    :: Int
   , product_name  :: T.Text
   , product_price :: Double
-  }
+  } deriving (Eq, Ord, Show, Generic)
+
+instance A.ToJSON   Product
+instance A.FromJSON Product
+
 
 data User = User
   { user_id        :: Int
   , user_name      :: T.Text
   , user_password  :: T.Text
   , user_privilege :: Int
-  }
+  } deriving (Eq, Ord, Show, Generic)
+
+instance A.ToJSON   User
+instance A.FromJSON User
 
 -- Same as User, but excluding the Password field (for sending to client)
 -- Not actually a table, just an "illusion" of one, for the client.
@@ -76,93 +85,69 @@ data CensoredUser = CensoredUser
   { cuser_id        :: Int
   , cuser_name      :: T.Text
   , cuser_privilege :: Int
-  } deriving (Eq, Ord, Show)
+  } deriving (Eq, Ord, Show, Generic)
+
+instance A.ToJSON   CensoredUser
+instance A.FromJSON CensoredUser
 
 data Stock = Stock
   { stock_id   :: Int
   , in_stock   :: T.Text
-  } deriving (Eq, Ord, Show)
+  } deriving (Eq, Ord, Show, Generic)
+
+instance A.ToJSON   Stock
+instance A.FromJSON Stock
 
 data Sale = Sale
   { sales_id    :: Int
   , sales_date  :: String
   , number_sold :: Int
-  } deriving (Eq, Ord, Show)
+  } deriving (Eq, Ord, Show, Generic)
+
+instance A.ToJSON   Sale
+instance A.FromJSON Sale
 
 data Products_sales_xref = Products_sales_xref
   { xref_product_id :: Int  -- Foreign key to product_id
   , xref_sales_id   :: Int  -- Foreign key to sales_id
-  } deriving (Eq, Ord, Show)
+  } deriving (Eq, Ord, Show, Generic)
 
 data Till = Till
   { till_id   :: Int
   , till_name :: T.Text
-  } deriving (Eq, Ord, Show)
+  } deriving (Eq, Ord, Show, Generic)
+
+instance A.ToJSON   Till
+instance A.FromJSON Till
 
 data User_till_xref = User_till_xref
   { xref_user_id   :: Int  -- Foreign key to user_id
   , xref_till_id   :: Int  -- Foreign key to till_id
-  } deriving (Eq, Ord, Show)
+  } deriving (Eq, Ord, Show, Generic)
 
 data Date = Date
   { dateYear  :: Int
   , dateMonth :: Int
   , dateDay   :: Int
-  } deriving (Eq, Ord, Show)
+  } deriving (Eq, Ord, Show, Generic)
+
+instance A.ToJSON   Date
+instance A.FromJSON Date
 
 data Day = Day { dayHour   :: Int
                , dayMinute :: Int
                , daySecond :: Int
-               } deriving (Eq, Ord, Show)
+               } deriving (Eq, Ord, Show, Generic)
+instance A.ToJSON   Day
+instance A.FromJSON Day
 
 data Request = Request { requestName :: String
                        , requestPass :: String
-                       } deriving (Eq, Ord, Show, Read, Generic)
-instance A.ToJSON Request
-instance A.FromJSON Request
+                       } deriving ( Eq, Ord, Show
+                                  , Read, Generic
+                                  , A.FromJSON , A.ToJSON)
 
 {- Marshalling To JSON
    These convert SQL table objects as above into JSON objects and vice
    versa.
 -}
-
-instance A.ToJSON User where
-  toJSON (User user_id user_name user_password user_privilege) =
-    A.object [ "id" .= user_id
-             , "name" .= user_name
-             , "passwd" .= user_password
-             , "privilege" .= user_privilege
-             ]
-
-instance A.ToJSON CensoredUser where
-  toJSON (CensoredUser cuser_id cuser_name cuser_privilege) =
-    A.object [ "id" .= cuser_id
-             , "name" .= cuser_name
-             , "privilege" .= cuser_privilege
-             ]
-
-instance A.ToJSON Product where
-  toJSON (Product product_id product_name product_price) =
-    A.object [ "id" .= product_id
-             , "name" .= product_name
-             , "price" .= product_price
-             ]
-
-instance A.ToJSON Stock where
-  toJSON (Stock stock_id in_stock) =
-    A.object [ "id" .= stock_id
-             , "in_stock" .= in_stock
-             ]
-
-instance A.ToJSON Sale where
-  toJSON (Sale sales_id sales_date number_sold) =
-    A.object [ "id" .= sales_id
-             , "date" .= sales_date
-             , "number_sold" .= number_sold
-             ]
-
-instance A.ToJSON Till where
-  toJSON (Till till_id till_name) =
-    A.object [ "id" .= till_id
-             , "name" .= till_name
-             ]

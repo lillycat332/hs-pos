@@ -8,7 +8,7 @@ pkgs.mkShell {
     clang
     zlib
     cabal-install
-    ghc
+    haskell.compiler.ghc924
     sqlite 
     elmPackages.elm
   ];

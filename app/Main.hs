@@ -36,7 +36,7 @@
 -}
 
 
-{-# LANGUAGE MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings, BangPatterns #-}
+{-# LANGUAGE Trustworthy, MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings, BangPatterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
 
@@ -48,21 +48,27 @@ import Data.Aeson ((.=))
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Monoid (mconcat)
 import Data.Semigroup ((<>))
-import Database.HsPOS.Internal.Http
-import Database.HsPOS.Internal.Sqlite (tryCreateTables)
+import Database.HsPOS.Http
+import Database.HsPOS.Sqlite (tryCreateTables)
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import Network.Wai.Middleware.Static (addBase, noDots, staticPolicy, (>->))
+import Network.Wai.Middleware.Static ( addBase
+                                     , noDots
+                                     , staticPolicy
+                                     , (>->))
 import Options.Applicative hiding (header)
 import qualified Options.Applicative as O
-import Web.Scotty ( middleware, scotty, ScottyM )
+import Web.Scotty ( middleware, scotty, ScottyM, notFound )
 
+{- Here are our command line arguments. We use this to pass parameters
+   in that affect the operation of the entire program.
+-}
 data Args = Args
-  { optDb     :: String
+  { optDb     :: FilePath
   , optPort   :: Int
   , optQuiet  :: Bool
   }
 
--- | This defines a parser for command line arguments.
+-- | This creates a parser for our command line arguments.
 args :: Parser Args
 args = Args <$>
   strOption
@@ -88,7 +94,7 @@ args = Args <$>
   )
 
 -- | The main entry point.
--- | This function is called by the GHC runtime when the program is run.
+-- | This is called by the GHC runtime when the program is run.
 main :: IO ()
 main = do
   -- Shadow opts with a parsed version of it.
@@ -107,18 +113,17 @@ main = do
           middleware $ staticPolicy (noDots >-> addBase "public")
           -- unless we are using the option -q/--quiet, log to stdout.
           unless (optQuiet opts) $ middleware logStdoutDev
-
           {- Try these handlers when we recieve a connection. The >>,
              or "then" operator is a way of sequencing multiple
              handlers. This effectively means: try static, then
              allUsersHandler, etc. Each handler handles a route and
              what should be done when a client accesses them.  -}
-          
           static >> userHandler     dbStr
                  >> prodHandler     dbStr
                  >> searchHandler   dbStr
                  >> saleHandle      dbStr
-                 -- >> prodNameHandler dbStr
+                 >> loginHandle     dbStr
+                 
   where
     -- Provide the parser to main.
     opts = info (args <**> helper)
