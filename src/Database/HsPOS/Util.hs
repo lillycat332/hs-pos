@@ -1,7 +1,7 @@
 {- 
   hs-pos
   Util.hs
-  Created by Lilly Cham
+  Created by Lilly Cham on 16/09/2022
 
   Copyright (c) 2022, Lilly Cham
 
@@ -39,33 +39,39 @@
 module Database.HsPOS.Util where
 import Database.HDBC (fromSql, SqlValue)
 import Database.HsPOS.Types
+    ( CensoredUser(..), User(..), Product(Product) ) 
 import qualified Data.Text.Lazy as T
 
+tuplify3 :: [c] -> (c, c, c)
 tuplify3 [x, y, z] = (x, y, z)
+
+tuplify4 :: [d] -> (d, d, d, d)
 tuplify4 [a, b, c, d] = (a,b,c,d)
 
 {- | "DeSQL" a censored user (Int,Text,Int),
-     ie. turn it from SQL types into native haskell types. -}
+     ie. turn it from SQL types into a CensoredUser. -}
 desqlCU :: (SqlValue, SqlValue, SqlValue) -> CensoredUser
 desqlCU (id, name, priv)    =
-  CensoredUser { cuser_id   = (fromSql id)
-               , cuser_name = (T.pack $ fromSql name)
-               , cuser_privilege = (fromSql priv)
+  CensoredUser { cuser_id   = fromSql id
+               , cuser_name = T.pack $ fromSql name
+               , cuser_privilege = fromSql priv
                }
 
-{- | "DeSQL" a censored user (Int,Text,Int),
-     ie. turn it from SQL types into native haskell types. -}
+{- | "DeSQL" a user as a tuple (Int,Text,Int),
+     ie. turn it from SQL types into a User . -}
 desqlU :: (SqlValue, SqlValue, SqlValue, SqlValue) -> User
 desqlU (id,name,pw,priv) =
-  User { user_id        = (fromSql id)
-       , user_name      = (T.pack $ fromSql name)
-       , user_password  = (T.pack $ fromSql pw)
-       , user_privilege = (fromSql priv)
+  User { user_id        = fromSql id
+       , user_name      = T.pack $ fromSql name
+       , user_password  = T.pack $ fromSql pw
+       , user_privilege = fromSql priv
        }
 
-{- | "DeSQL" a product (or any other value in the form (Int,String,Double),
-     ie. turn it from SQL types into native haskell types. -}
+{- | "DeSQL" a product (Int,String,Double),
+     ie. turn it from SQL types into Product. -}
 desqlP :: (SqlValue, SqlValue, SqlValue) -> Product
 desqlP (id, name, price) = Product (fromSql id)
                                    (fromSql name)
                                    (fromSql price)
+
+

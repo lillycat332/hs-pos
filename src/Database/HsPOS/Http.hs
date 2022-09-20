@@ -41,18 +41,17 @@
 {-# HLINT ignore "Use camelCase" #-}
 
 module Database.HsPOS.Http where
-import Control.Applicative
+import Control.Applicative ()
 import Control.Monad (join, when, unless, liftM)
 import Data.Monoid (mconcat)
 import Data.Semigroup ((<>))
-import Network.HTTP.Types
+import Network.HTTP.Types ( status400 )
 import Network.HTTP.Types.Status (status400)
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Network.Wai.Middleware.Static (addBase
                                      , noDots
                                      , staticPolicy
                                      , (>->))
-import Options.Applicative hiding (header)
 import qualified Data.Aeson as A
 import qualified Data.Text.Lazy as T
 import Data.Maybe (fromMaybe)
@@ -75,8 +74,19 @@ import Web.Scotty ( delete
                   , ScottyM
                   , ActionM )
 import Database.HsPOS.Sqlite
-import Database.HsPOS.Types
-import Database.HsPOS.Auth
+    ( makeSale,
+      monthlyTotalSales,
+      monthlySales,
+      rangeSales,
+      yearlySales,
+      addProd,
+      allCUsers,
+      getCUser,
+      getProd,
+      allProds,
+      searchProds )
+import Database.HsPOS.Types ( Request )
+import Database.HsPOS.Auth ( validateCredentials )
 
 -- Connection handlers
 
@@ -86,12 +96,12 @@ static = get "/" $ file "./public/index.html"
   -- Admin panel
   -- get "/dashboard" $ file "./public/dash.html"
 
---searchHandler :: FilePath -> ScottyM ()
+searchHandler :: FilePath -> ScottyM ()
 searchHandler dbStr = do
   get "/search/prods/:query" $ do
     query  <- param "query"
     result <- liftIO $ searchProds dbStr query
-    json $ result  
+    json result  
 
 -- | Returns a list of all users/products over HTTP
 userHandler :: FilePath -> ScottyM ()
@@ -133,7 +143,7 @@ saleHandle dbStr = do
     let date = year <> "-" <> month
     sales   <- liftIO $ monthlySales dbStr date id
     -- Convert the result to text, then send it over HTTP as a reply.
-    json $ sales
+    json sales
 
   get "/sales/:y/:m/to/:y2/:m2/:id/" $ do
     {- Fetch the parameters from the url (ie. :date, :id in the form
@@ -147,7 +157,7 @@ saleHandle dbStr = do
     let date2 = year2 <> "-" <> month2
     sales    <- liftIO $ rangeSales dbStr date1 date2 id
     -- Convert the result to text, then send it over HTTP as a reply.
-    json $ sales
+    json sales
 
   get "/sales/total/:y/:m/:id/" $ do
     {- Fetch the parameters from the url (ie. :date, :id in the form
@@ -158,7 +168,7 @@ saleHandle dbStr = do
     let date = year <> "-" <> month
     sales   <- liftIO $ monthlyTotalSales dbStr date id
     -- Convert the result to text, then send it over HTTP as a reply.
-    json $ sales
+    json sales
     
   get "/sales/:y/:id/" $ do
     {- Fetch the parameters from the url (ie. :date, :id in the form
@@ -189,6 +199,6 @@ loginHandle dbStr = do
     -- Now that we've gotten the request, let's make sure it's valid.
     let ok = validateCredentials req
 
-    when (not ok) (status status400 >> finish)
+    unless ok (status status400 >> finish)
     text "I'm in."
     

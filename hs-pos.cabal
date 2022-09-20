@@ -10,6 +10,7 @@ description:        hs-pos is a Point of Sale system backend in Haskell,
                     of helper functions to make it easier to build a POS.
 
 bug-reports:        https://github.com/lillycat332/hs-pos
+homepage:           https://github.com/lillycat332/hs-pos
 license:            BSD-3-Clause
 license-file:       LICENSE
 stability:          experimental

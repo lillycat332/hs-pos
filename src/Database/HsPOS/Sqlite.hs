@@ -45,11 +45,16 @@ import Control.Monad (join, when, unless)
 import Data.Maybe (fromMaybe)
 import Data.Monoid (mconcat)
 import Data.Semigroup ((<>))
-import Database.HDBC
-import Database.HDBC.Sqlite3 (connectSqlite3)
-import Database.HsPOS.Types
-import Database.HsPOS.Util
 import Data.Tuple.Curry (uncurryN)
+import Database.HDBC
+    ( fromSql,
+      toSql,
+      quickQuery',
+      IConnection(disconnect, run, commit) )
+import Database.HDBC.Sqlite3 (connectSqlite3)
+import Database.HsPOS.Types ( CensoredUser, User, Product )
+import Database.HsPOS.Util
+    ( tuplify3, tuplify4, desqlCU, desqlU, desqlP )
 import qualified Data.Text.Lazy as T
 
 -- SQL functions
@@ -65,12 +70,13 @@ tryCreateTables dbStr = do
           , "CREATE TABLE IF NOT EXISTS tills (till_id integer not null constraint tills_pk primary key autoincrement, till_name integer)"
           , "CREATE TABLE IF NOT EXISTS user_till_xref (user_id integer constraint user_till_xref_pk primary key constraint user_till_xref_users_user_id_fk references users, till_id integer constraint user_till_xref_tills_till_id_fk references tills)"
           , "CREATE TABLE IF NOT EXISTS products_sales_xref (product_id integer references products, sales_id integer constraint products_sales_xref_pk primary key references sales)"
+          , "CREATE TABLE IF NOT EXISTS session (session_id integer primary key)"
           ]
   x <- mapM (\x -> run conn x []) q
   commit conn
   disconnect conn
 
-makeSale :: FilePath -> String -> Int-> Int -> IO Bool
+makeSale :: FilePath -> String -> Integer-> Integer -> IO Bool
 makeSale dbStr date id quant = do
   conn  <- connectSqlite3 dbStr
   let q1 = "INSERT INTO sales (sales_date, number_sold) VALUES (?, ?) RETURNING sales_id"
@@ -88,7 +94,7 @@ makeSale dbStr date id quant = do
 -- d, a date in the format "YYYY-MM",
 -- id, a product id, 
 -- and returns the total sales for that month.
-monthlyTotalSales :: FilePath -> String -> Int -> IO Int
+monthlyTotalSales :: FilePath -> String -> Integer -> IO Integer
 monthlyTotalSales dbStr d id = do
   conn <- connectSqlite3 dbStr
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
@@ -96,17 +102,17 @@ monthlyTotalSales dbStr d id = do
   disconnect conn
   let r'   = head r
   let r''  = head r'
-  return (fromSql r'' :: Int)
+  return (fromSql r'' :: Integer)
 
-monthlySales :: FilePath -> String -> Int -> IO [Int]
+monthlySales :: FilePath -> String -> Integer -> IO [Integer]
 monthlySales dbStr d id = do
   conn <- connectSqlite3 dbStr
   let q = "SELECT number_sold FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
   r <- quickQuery' conn q [toSql d, toSql id]
   disconnect conn
-  return $ concat (map (map fromSql) r)
+  return $ concatMap (map fromSql) r
 
-rangeSales :: FilePath -> String -> String -> Int -> IO [[Int]]
+rangeSales :: FilePath -> String -> String -> Integer -> IO [[Integer]]
 rangeSales dbStr date date2 id = do
   conn <- connectSqlite3 dbStr
   let q = "SELECT number_sold FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) BETWEEN (?) AND (?) AND products_sales_xref.product_id = (?)"
@@ -115,7 +121,7 @@ rangeSales dbStr date date2 id = do
   return $ map (map fromSql) r
 
 -- | yearlySales returns the total sales of said product id for that year.
-yearlySales :: FilePath -> String -> Int -> IO Int
+yearlySales :: FilePath -> String -> Integer -> IO Integer
 yearlySales dbStr d id = do
   conn <- connectSqlite3 dbStr
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y', sales_date) = (?) AND products_sales_xref.product_id = (?)"
@@ -123,12 +129,12 @@ yearlySales dbStr d id = do
   disconnect conn
   let r'   = head r
   let r''  = head r'
-  return (fromSql r'' :: Int)
+  return (fromSql r'' :: Integer)
 
 {- | getProdName returns an IO [String] with the product name of the
      products matching the given product ID
 -}
-getProdName :: FilePath -> Int -> IO [String]
+getProdName :: FilePath -> Integer -> IO [String]
 getProdName dbStr id = do
   conn <- connectSqlite3 dbStr
   let query = "select product_name from products where product_id = (?)"
@@ -144,7 +150,7 @@ addProd dbStr name price = do
   r <- quickQuery' conn q [toSql name, toSql price]
   commit conn
   disconnect conn
-  return $ if ((length $ head r) >= 0) then False else True
+  return $ length (head r) < 0
 
 allCUsers :: FilePath -> IO [CensoredUser]
 allCUsers dbStr = do
@@ -152,56 +158,63 @@ allCUsers dbStr = do
   let q = "SELECT user_id, user_name, user_privilege FROM users"
   r    <- quickQuery' conn q []
   disconnect conn
-  return $ map desqlCU $ map tuplify3 r
+  return $ map (desqlCU . tuplify3) r
 
-getCUser :: FilePath -> Int -> IO CensoredUser
+getCUser :: FilePath -> Integer -> IO CensoredUser
 getCUser dbStr id = do
   conn   <- connectSqlite3 dbStr
   let q   = "SELECT user_id, user_name, user_privilege FROM user WHERE user_id=(?)"
   result <- quickQuery' conn q [toSql id]
   disconnect conn
-  return $ (head . map desqlCU . map tuplify3) result
+  return $ (head . map (desqlCU . tuplify3)) result
 
-getUser :: FilePath -> Int -> IO User
+getUser :: FilePath -> Integer -> IO User
 getUser dbStr id = do
   conn   <- connectSqlite3 dbStr
-  let q   = "SELECT * FROM user where user_id=(?)"
+  let q   = "SELECT * FROM user WHERE user_id=(?)"
   result <- quickQuery' conn q [toSql id]
   disconnect conn
-  return $ (head . map desqlU . map tuplify4) result
+  return $ (head . map (desqlU . tuplify4)) result
 
-searchUsers :: FilePath -> String -> IO [[Int]]
+searchUsers :: FilePath -> String -> IO [[Integer]]
 searchUsers dbStr term = do
   conn      <- connectSqlite3 dbStr
   let query  = "SELECT user_id FROM products WHERE user_name LIKE (?)"
   let term'  = "%" <> term <> "%"
   result    <- quickQuery' conn query [toSql term']
   disconnect conn
-  return $ map (\x -> map fromSql x) result
+  return $ map (map fromSql) result
 
-getProd :: String -> Int -> IO Product
+getProd :: String -> Integer -> IO Product
 getProd dbStr id = do
   conn   <- connectSqlite3 dbStr
   let q   = "SELECT * FROM products WHERE product_id=(?)"
   result <- quickQuery' conn q [toSql id]
   disconnect conn
-  return $ head $ map desqlP $ map tuplify3 result
+  return $ head $ map (desqlP . tuplify3) result
 
+allProds :: FilePath -> IO [Product]
 allProds dbStr = do
   conn   <- connectSqlite3 dbStr
   let q   = "SELECT * FROM products"
   result <- quickQuery' conn q []
   disconnect conn
-  return $ map desqlP $ map tuplify3 result
+  return $ map (desqlP . tuplify3) result
 
-searchProds :: FilePath -> String -> IO [[Int]]
+searchProds :: FilePath -> String -> IO [[Integer]]
 searchProds dbStr term = do
   conn      <- connectSqlite3 dbStr
   let query  = "SELECT product_id FROM products WHERE product_name LIKE (?)"
   let term'  = "%" <> term <> "%"
   result    <- quickQuery' conn query [toSql term']
   disconnect conn
-  return $ map (\x -> map fromSql x) result
+  return $ map (map fromSql) result
 
+newUser :: FilePath -> String -> String -> Integer -> IO ()
+newUser dbStr name pw priv = do
+  conn     <- connectSqlite3 dbStr
+  let query = "INSERT INTO users (user_name, user_password, user_privilege) VALUES (?,?,?)"
+  disconnect conn
+  return ()
 
 -- SELECT till_name FROM till WHERE till.till_id=(SELECT al.till_id FROM allowed_till al where al.emp_id = (SELECT emp.emp_id FROM employees emp WHERE emp.name="example"))

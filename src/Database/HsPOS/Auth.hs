@@ -45,10 +45,6 @@ import qualified Data.Text.Lazy           as T
 import           Database.HsPOS.Types
 --import qualified Data.Password.Bcrypt     as P
 
--- authMiddleware = basicAuth (\u p -> return $ u == "user" && secureMemFromByteString p == password) "Login"
-
 validateCredentials creds = True
   -- let pw = P.mkPassword (requestPass creds)
-  
-
   
