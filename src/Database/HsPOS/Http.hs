@@ -36,9 +36,8 @@
 -}
 
 
-{-# LANGUAGE Trustworthy, MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use camelCase" #-}
+{-# LANGUAGE Trustworthy, MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings, OverloadedRecordDot #-}
+{- HLINT ignore "Use camelCase" -}
 
 module Database.HsPOS.Http where
 import Control.Applicative ()
@@ -84,8 +83,8 @@ import Database.HsPOS.Sqlite
       getCUser,
       getProd,
       allProds,
-      searchProds )
-import Database.HsPOS.Types ( Request )
+      searchProds, addUser, purgeDb )
+import Database.HsPOS.Types ( Request, User, Product (product_name, product_price, product_id) )
 import Database.HsPOS.Auth ( validateCredentials )
 
 -- Connection handlers
@@ -103,7 +102,7 @@ searchHandler dbStr = do
     result <- liftIO $ searchProds dbStr query
     json result  
 
--- | Returns a list of all users/products over HTTP
+-- | Handle listingm searching and adding users
 userHandler :: FilePath -> ScottyM ()
 userHandler dbStr = do
   get "/users/all" $ do
@@ -114,6 +113,11 @@ userHandler dbStr = do
     id   <- param "id"
     user <- liftIO (getCUser dbStr id)
     json $ A.toJSON user
+
+  post "/users/" $ do
+    user ::User <- jsonData
+    result <- liftIO $ addUser dbStr user
+    json result
 
 prodHandler dbStr = do
   get "/prods/:id/" $ do
@@ -127,11 +131,13 @@ prodHandler dbStr = do
     json $ A.toJSON prodsJSON
 
   post "/prods/" $ do
-    name  <- param "name"
-    price <- param "price"
-    x     <- liftIO $ addProd dbStr name price
+    prod :: Product <- jsonData
+    let name  = T.unpack $ prod.product_name
+    let price = prod.product_price
+    x        <- liftIO $ addProd dbStr name price
     json x
 
+-- | Handle sales data requests, and making new requests.
 saleHandle :: String -> ScottyM ()
 saleHandle dbStr = do
   get "/sales/:y/:m/:id/" $ do
@@ -179,16 +185,16 @@ saleHandle dbStr = do
     -- Convert the result to text, then send it over HTTP as a reply.
     text $ T.pack $ show sales
 
-  post "/sales/:y/:m/:d/:quant/:id/" $ do
-    id    <- param "id"
-    num   <- param "quant"
+  post "/sales/:y/:m/:d/" $ do
+    prod  :: Product <- jsonData
     year  <- param "y"
     month <- param "m"
     day   <- param "d"
     let date :: String = year <> "-" <> month <> "-" <> day
-    ok    <- liftIO $ makeSale dbStr date id num
+    ok    <- liftIO $ makeSale dbStr date (prod.product_id) 1
     json ok
 
+-- | Handle login requests.
 loginHandle :: FilePath -> ScottyM ()
 loginHandle dbStr = do
   post "/tawa-insa/" $ do
@@ -201,4 +207,7 @@ loginHandle dbStr = do
 
     unless ok (status status400 >> finish)
     text "I'm in."
+
+purgeHandler :: FilePath -> ScottyM ()
+purgeHandler dbStr = delete "/UNSAFE-PURGE-ALL-CHECK-FIRST-IM-SERIOUS/" $ liftIO (purgeDb dbStr) >> json True
     

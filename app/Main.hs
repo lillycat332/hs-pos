@@ -37,31 +37,55 @@
 
 
 {-# LANGUAGE Trustworthy, MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {- HLINT ignore "Use camelCase" -}
 
 module Main where
-import Control.Applicative
-import Control.Monad (join, when, unless, liftM)
+import Control.Applicative ( (<**>) )
+import Control.Monad ( join, when, unless, liftM )
 import Control.Monad.IO.Class ( liftIO )
-import Data.Aeson ((.=))
-import Data.Maybe (fromMaybe, isNothing)
-import Data.Monoid (mconcat)
-import Data.Semigroup ((<>))
+import Data.Aeson ( (.=) )
+import Data.Maybe ( fromMaybe, isNothing )
+import Data.Monoid ( mconcat )
+import Data.Semigroup ( (<>) )
 import Database.HsPOS.Http
-import Database.HsPOS.Sqlite (tryCreateTables)
-import Network.Wai.Middleware.RequestLogger (logStdoutDev)
+    ( static,
+      searchHandler,
+      userHandler,
+      prodHandler,
+      saleHandle,
+      loginHandle,
+      purgeHandler)
+import Database.HsPOS.Sqlite ( tryCreateTables )
+import Network.Wai.Middleware.RequestLogger ( logStdoutDev )
+import Network.Wai.Middleware.Gzip
+    ( def, gzip, GzipFiles(GzipCompress), GzipSettings(gzipFiles) )
 import Network.Wai.Middleware.Static ( addBase
                                      , noDots
                                      , staticPolicy
-                                     , (>->))
-import Options.Applicative hiding (header)
+                                     , (>->), initCaching )
+import Options.Applicative
+    ( auto,
+      fullDesc,
+      help,
+      info,
+      long,
+      metavar,
+      option,
+      progDesc,
+      short,
+      showDefault,
+      strOption,
+      switch,
+      value,
+      execParser,
+      helper,
+      Parser )
 import qualified Options.Applicative as O
 import Web.Scotty ( middleware, scotty, ScottyM, notFound )
+import Network.Wai.Middleware.RealIp (defaultTrusted)
 
 {- Here are our command line arguments. We use this to pass parameters
-   in that affect the operation of the entire program.
--}
+   in that affect the operation of the entire program. -}
 data Args = Args
   { optDb     :: FilePath
   , optPort   :: Int
@@ -111,6 +135,8 @@ main = do
         scotty port $ do
           -- Add policies to prevent directory traversal attacks.
           middleware $ staticPolicy (noDots >-> addBase "public")
+          -- Use Gzip, which can shave seconds off load time.
+          middleware $ gzip def {gzipFiles = GzipCompress }
           -- unless we are using the option -q/--quiet, log to stdout.
           unless (optQuiet opts) $ middleware logStdoutDev
           {- Try these handlers when we recieve a connection. The >>,
@@ -123,6 +149,7 @@ main = do
                  >> searchHandler   dbStr
                  >> saleHandle      dbStr
                  >> loginHandle     dbStr
+                 >> purgeHandler    dbStr
                  
   where
     -- Provide the parser to main.
@@ -131,3 +158,4 @@ main = do
       <> progDesc "Run a server for an EPOS system, with a REST API and Database."
       <> O.header "hs-pos -- A Haskell EPOS backend"
       )
+

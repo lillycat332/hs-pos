@@ -36,15 +36,15 @@
 -}
 
 
-{-# LANGUAGE Safe, ScopedTypeVariables, OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use camelCase" #-}
+{-# LANGUAGE Safe, ScopedTypeVariables #-}
 
 module Database.HsPOS.Auth where
 import qualified Data.Text.Lazy           as T
-import           Database.HsPOS.Types
+import safe Database.HsPOS.Types ( Request )
 --import qualified Data.Password.Bcrypt     as P
 
+-- | Validates a given login request, returning false if it's invalid.
+validateCredentials :: Request -> Bool
 validateCredentials creds = True
   -- let pw = P.mkPassword (requestPass creds)
   

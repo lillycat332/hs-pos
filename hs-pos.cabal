@@ -37,6 +37,7 @@ library
                     , optparse-applicative
                     , convertible
                     , tuple
+                    , directory
                     -- , password
     exposed-modules:  Database.HsPOS.Auth
                     , Database.HsPOS.Types

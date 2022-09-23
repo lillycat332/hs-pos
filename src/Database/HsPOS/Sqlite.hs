@@ -36,9 +36,8 @@
 -}
 
 
-{-# LANGUAGE Trustworthy, MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use camelCase" #-}
+{-# LANGUAGE Trustworthy, MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings, OverloadedRecordDot #-}
+{- HLINT ignore "Use camelCase" -}
 
 module Database.HsPOS.Sqlite where
 import Control.Monad (join, when, unless)
@@ -52,12 +51,20 @@ import Database.HDBC
       quickQuery',
       IConnection(disconnect, run, commit) )
 import Database.HDBC.Sqlite3 (connectSqlite3)
-import Database.HsPOS.Types ( CensoredUser, User, Product )
+import Database.HsPOS.Types ( CensoredUser, User, Product, user_name, user_password, user_privilege )
 import Database.HsPOS.Util
     ( tuplify3, tuplify4, desqlCU, desqlU, desqlP )
 import qualified Data.Text.Lazy as T
+import System.Directory ( removeFile )
 
 -- SQL functions
+
+-- | Purges the entire database
+purgeDb :: FilePath -> IO ()
+purgeDb dbStr = do
+  removeFile dbStr
+  tryCreateTables dbStr
+  
 
 -- | Creates the requisite tables for the database.
 tryCreateTables :: FilePath -> IO ()
@@ -65,7 +72,7 @@ tryCreateTables dbStr = do
   conn <- connectSqlite3 dbStr
   let q = [ "CREATE TABLE IF NOT EXISTS users (user_id INTEGER not null primary key autoincrement, user_name TEXT not null,user_password TEXT not null, user_privilege INTEGER not null)"
           , "CREATE TABLE IF NOT EXISTS stock (product_id integer not null constraint stock_pk primary key autoincrement references products, in_stock integer)"
-          , "CREATE TABLE IF NOT EXISTS sales (sales_id integer constraint sales_pk primary key autoincrement, sales_date date number_sold integer)"
+          , "CREATE TABLE IF NOT EXISTS sales (sales_id integer constraint sales_pk primary key autoincrement, sales_date date, number_sold integer)"
           , "CREATE TABLE IF NOT EXISTS products (product_id INTEGER not null primary key autoincrement,product_name TEXT not null,product_price DOUBLE not null)"
           , "CREATE TABLE IF NOT EXISTS tills (till_id integer not null constraint tills_pk primary key autoincrement, till_name integer)"
           , "CREATE TABLE IF NOT EXISTS user_till_xref (user_id integer constraint user_till_xref_pk primary key constraint user_till_xref_users_user_id_fk references users, till_id integer constraint user_till_xref_tills_till_id_fk references tills)"
@@ -76,7 +83,7 @@ tryCreateTables dbStr = do
   commit conn
   disconnect conn
 
-makeSale :: FilePath -> String -> Integer-> Integer -> IO Bool
+makeSale :: FilePath -> String -> Integer -> Integer -> IO Bool
 makeSale dbStr date id quant = do
   conn  <- connectSqlite3 dbStr
   let q1 = "INSERT INTO sales (sales_date, number_sold) VALUES (?, ?) RETURNING sales_id"
@@ -152,6 +159,16 @@ addProd dbStr name price = do
   disconnect conn
   return $ length (head r) < 0
 
+-- | Add a User into the database, returning True if it worked.
+addUser :: FilePath -> User -> IO Bool
+addUser dbStr usr = do
+  conn <- connectSqlite3 dbStr
+  let q = "INSERT INTO users (user_name, user_password, user_privilege) VALUES (?, ?, ?)"
+  r <- quickQuery' conn q [toSql usr.user_name, toSql usr.user_password, toSql usr.user_privilege]
+  commit conn
+  disconnect conn
+  return $ length (head r) < 0
+
 allCUsers :: FilePath -> IO [CensoredUser]
 allCUsers dbStr = do
   conn <- connectSqlite3 dbStr
@@ -193,6 +210,7 @@ getProd dbStr id = do
   disconnect conn
   return $ head $ map (desqlP . tuplify3) result
 
+-- | Returns a list of all the products in the database
 allProds :: FilePath -> IO [Product]
 allProds dbStr = do
   conn   <- connectSqlite3 dbStr
@@ -201,15 +219,18 @@ allProds dbStr = do
   disconnect conn
   return $ map (desqlP . tuplify3) result
 
-searchProds :: FilePath -> String -> IO [[Integer]]
+-- | Searches the database for a product, returning a list of matching
+-- | products.
+searchProds :: FilePath -> String -> IO [Product]
 searchProds dbStr term = do
   conn      <- connectSqlite3 dbStr
-  let query  = "SELECT product_id FROM products WHERE product_name LIKE (?)"
+  let query  = "SELECT * FROM products WHERE product_name LIKE (?)"
   let term'  = "%" <> term <> "%"
   result    <- quickQuery' conn query [toSql term']
   disconnect conn
-  return $ map (map fromSql) result
+  return $ map (desqlP . tuplify3) result
 
+-- | Creates a new user.
 newUser :: FilePath -> String -> String -> Integer -> IO ()
 newUser dbStr name pw priv = do
   conn     <- connectSqlite3 dbStr

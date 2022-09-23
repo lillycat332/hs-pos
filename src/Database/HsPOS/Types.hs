@@ -39,6 +39,7 @@
 {-# LANGUAGE DeriveAnyClass
            , DeriveGeneric
            , DuplicateRecordFields
+           , GADTs
            , MultiParamTypeClasses
            , OverloadedRecordDot
            , OverloadedStrings 
@@ -47,7 +48,6 @@
            , TypeSynonymInstances 
            , Trustworthy
 #-}
-{-# LANGUAGE GADTs #-}
 {- HLINT ignore "Use camelCase" -}
 
 module Database.HsPOS.Types where
