@@ -154,20 +154,20 @@ addProd :: FilePath -> String -> Double -> IO Bool
 addProd dbStr name price = do
   conn <- connectSqlite3 dbStr
   let q = "INSERT INTO products (product_name, product_price) VALUES (?, ?)"
-  r <- quickQuery' conn q [toSql name, toSql price]
+  r <- run conn q [toSql name, toSql price]
   commit conn
   disconnect conn
-  return $ length (head r) < 0
+  return $ r < 0
 
 -- | Add a User into the database, returning True if it worked.
 addUser :: FilePath -> User -> IO Bool
 addUser dbStr usr = do
   conn <- connectSqlite3 dbStr
   let q = "INSERT INTO users (user_name, user_password, user_privilege) VALUES (?, ?, ?)"
-  r <- quickQuery' conn q [toSql usr.user_name, toSql usr.user_password, toSql usr.user_privilege]
+  r <- run conn q [toSql usr.user_name, toSql usr.user_password, toSql usr.user_privilege]
   commit conn
   disconnect conn
-  return $ length (head r) < 0
+  return $ r < 0
 
 allCUsers :: FilePath -> IO [CensoredUser]
 allCUsers dbStr = do
