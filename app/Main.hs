@@ -41,19 +41,14 @@
 
 module Main where
 import Control.Applicative ( (<**>) )
-import Control.Monad ( join, when, unless, liftM )
-import Control.Monad.IO.Class ( liftIO )
-import Data.Aeson ( (.=) )
-import Data.Maybe ( fromMaybe, isNothing )
-import Data.Monoid ( mconcat )
-import Data.Semigroup ( (<>) )
+import Control.Monad ( unless )
 import Database.HsPOS.Http
     ( static,
       searchHandler,
       userHandler,
       prodHandler,
-      saleHandle,
-      loginHandle,
+      saleHandler,
+      loginHandler,
       purgeHandler)
 import Database.HsPOS.Sqlite ( tryCreateTables )
 import Network.Wai.Middleware.RequestLogger ( logStdoutDev )
@@ -62,7 +57,7 @@ import Network.Wai.Middleware.Gzip
 import Network.Wai.Middleware.Static ( addBase
                                      , noDots
                                      , staticPolicy
-                                     , (>->), initCaching )
+                                     , (>->) )
 import Options.Applicative
     ( auto,
       fullDesc,
@@ -81,8 +76,7 @@ import Options.Applicative
       helper,
       Parser )
 import qualified Options.Applicative as O
-import Web.Scotty ( middleware, scotty, ScottyM, notFound )
-import Network.Wai.Middleware.RealIp (defaultTrusted)
+import Web.Scotty ( middleware, scotty )
 
 {- Here are our command line arguments. We use this to pass parameters
    in that affect the operation of the entire program. -}
@@ -121,13 +115,13 @@ args = Args <$>
 -- | This is called by the GHC runtime when the program is run.
 main :: IO ()
 main = do
-  -- Shadow opts with a parsed version of it.
-  opts <- execParser opts
+  -- Instantiate a parsed version of opts.
+  popts <- execParser opts
   -- Try and create all the tables we want.
-  tryCreateTables $ optDb opts
+  tryCreateTables $ optDb popts
   -- These are lexically bound to the context of the following do block.
-  let port = optPort opts
-      dbStr = optDb opts
+  let port = optPort popts
+      dbStr = optDb popts
       in
         {- Run the webserver on the given port. The body of this block
            sets policies/options, and then handles setting routes from
@@ -136,19 +130,19 @@ main = do
           -- Add policies to prevent directory traversal attacks.
           middleware $ staticPolicy (noDots >-> addBase "public")
           -- Use Gzip, which can shave seconds off load time.
-          middleware $ gzip def {gzipFiles = GzipCompress }
+          middleware $ gzip def { gzipFiles = GzipCompress }
           -- unless we are using the option -q/--quiet, log to stdout.
-          unless (optQuiet opts) $ middleware logStdoutDev
+          unless (optQuiet popts) $ middleware logStdoutDev
           {- Try these handlers when we recieve a connection. The >>,
-             or "then" operator is a way of sequencing multiple
+             or monad "then" operator is a way of sequencing multiple
              handlers. This effectively means: try static, then
              allUsersHandler, etc. Each handler handles a route and
              what should be done when a client accesses them.  -}
           static >> userHandler     dbStr
                  >> prodHandler     dbStr
                  >> searchHandler   dbStr
-                 >> saleHandle      dbStr
-                 >> loginHandle     dbStr
+                 >> saleHandler     dbStr
+                 >> loginHandler    dbStr
                  >> purgeHandler    dbStr
                  
   where

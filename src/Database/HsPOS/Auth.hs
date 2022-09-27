@@ -36,15 +36,21 @@
 -}
 
 
-{-# LANGUAGE Safe, ScopedTypeVariables #-}
+{-# LANGUAGE Trustworthy, ScopedTypeVariables, OverloadedRecordDot #-}
 
 module Database.HsPOS.Auth where
+import Data.Maybe (fromJust)
 import qualified Data.Text.Lazy           as T
-import safe Database.HsPOS.Types ( Request )
---import qualified Data.Password.Bcrypt     as P
+import safe Database.HsPOS.Types ( LoginRequest, LoginRequest(requestPass) )
+import qualified Crypto.BCrypt            as P
+import Data.ByteString.Char8 ( pack, unpack )
+import qualified Data.ByteString          as BS
 
 -- | Validates a given login request, returning false if it's invalid.
-validateCredentials :: Request -> Bool
-validateCredentials creds = True
-  -- let pw = P.mkPassword (requestPass creds)
-  
+validateCredentials :: LoginRequest -> BS.ByteString -> Bool
+validateCredentials creds hashed = P.validatePassword hashed (pack (T.unpack creds.requestPass))
+
+-- | Hash a password
+quickHashPassword :: String -> IO String
+quickHashPassword pass = P.hashPasswordUsingPolicy P.fastBcryptHashingPolicy (pack pass) >>= \bstring
+  -> return $ unpack (fromJust bstring)

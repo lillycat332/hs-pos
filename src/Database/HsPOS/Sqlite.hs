@@ -36,26 +36,28 @@
 -}
 
 
-{-# LANGUAGE Trustworthy, MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings, OverloadedRecordDot #-}
+{-# LANGUAGE Trustworthy, MultiParamTypeClasses, ScopedTypeVariables, TypeFamilies, TypeSynonymInstances, OverloadedStrings, OverloadedRecordDot, ImportQualifiedPost #-}
 {- HLINT ignore "Use camelCase" -}
 
 module Database.HsPOS.Sqlite where
-import Control.Monad (join, when, unless)
-import Data.Maybe (fromMaybe)
-import Data.Monoid (mconcat)
-import Data.Semigroup ((<>))
-import Data.Tuple.Curry (uncurryN)
 import Database.HDBC
     ( fromSql,
       toSql,
       quickQuery',
       IConnection(disconnect, run, commit) )
 import Database.HDBC.Sqlite3 (connectSqlite3)
-import Database.HsPOS.Types ( CensoredUser, User, Product, user_name, user_password, user_privilege )
+import Control.Monad (when)
+import Control.Exception qualified as E
+import Database.HsPOS.Types ( CensoredUser (cuserId), User, Product, userName, userPassword, userPrivilege, APIError(InvalidData), DBError(NoDataError) )
+import Database.HsPOS.Session
+    ( Session(sessionHash, sessionUUID, sessionUser) )
+import Database.HsPOS.Auth (quickHashPassword)
 import Database.HsPOS.Util
-    ( tuplify3, tuplify4, desqlCU, desqlU, desqlP )
-import qualified Data.Text.Lazy as T
+    ( tuplify3, tuplify4, desqlS, desqlCU, desqlU, desqlP )
 import System.Directory ( removeFile )
+import Data.UUID (toString, UUID)
+import Database.HDBC qualified as H
+import Data.Text.Lazy qualified as T
 
 -- SQL functions
 
@@ -77,21 +79,21 @@ tryCreateTables dbStr = do
           , "CREATE TABLE IF NOT EXISTS tills (till_id integer not null constraint tills_pk primary key autoincrement, till_name integer)"
           , "CREATE TABLE IF NOT EXISTS user_till_xref (user_id integer constraint user_till_xref_pk primary key constraint user_till_xref_users_user_id_fk references users, till_id integer constraint user_till_xref_tills_till_id_fk references tills)"
           , "CREATE TABLE IF NOT EXISTS products_sales_xref (product_id integer references products, sales_id integer constraint products_sales_xref_pk primary key references sales)"
-          , "CREATE TABLE IF NOT EXISTS session (session_id integer primary key)"
+          , "CREATE TABLE IF NOT EXISTS session (session_id text not null primary key, user_id integer references users, session_hash integer not null)"
           ]
-  x <- mapM (\x -> run conn x []) q
+  mapM_ (\x -> run conn x []) q
   commit conn
   disconnect conn
 
 makeSale :: FilePath -> String -> Integer -> Integer -> IO Bool
-makeSale dbStr date id quant = do
+makeSale dbStr date pid quant = do
   conn  <- connectSqlite3 dbStr
   let q1 = "INSERT INTO sales (sales_date, number_sold) VALUES (?, ?) RETURNING sales_id"
   let q2 = "INSERT INTO products_sales_xref (product_id, sales_id) values (?, ?)"
   let q3 = "UPDATE stock SET in_stock=in_stock - 1 WHERE product_id = (?) and in_stock > 0"
   sid   <- quickQuery' conn q1 [toSql date, toSql quant]
-  quickQuery' conn q2 [toSql id, (head . head) sid]
-  ok    <- run conn q3 [toSql id]
+  _     <- quickQuery' conn q2 [toSql pid, (head . head) sid]
+  ok    <- run conn q3 [toSql pid]
   commit conn
   disconnect conn
   return $ ok >= 1
@@ -102,37 +104,37 @@ makeSale dbStr date id quant = do
 -- id, a product id, 
 -- and returns the total sales for that month.
 monthlyTotalSales :: FilePath -> String -> Integer -> IO Integer
-monthlyTotalSales dbStr d id = do
+monthlyTotalSales dbStr d pid = do
   conn <- connectSqlite3 dbStr
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
-  r <- quickQuery' conn q [toSql d, toSql id]
+  r <- quickQuery' conn q [toSql d, toSql pid]
   disconnect conn
   let r'   = head r
   let r''  = head r'
   return (fromSql r'' :: Integer)
 
 monthlySales :: FilePath -> String -> Integer -> IO [Integer]
-monthlySales dbStr d id = do
+monthlySales dbStr d pid = do
   conn <- connectSqlite3 dbStr
   let q = "SELECT number_sold FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
-  r <- quickQuery' conn q [toSql d, toSql id]
+  r <- quickQuery' conn q [toSql d, toSql pid]
   disconnect conn
   return $ concatMap (map fromSql) r
 
 rangeSales :: FilePath -> String -> String -> Integer -> IO [[Integer]]
-rangeSales dbStr date date2 id = do
+rangeSales dbStr date date2 pid = do
   conn <- connectSqlite3 dbStr
   let q = "SELECT number_sold FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) BETWEEN (?) AND (?) AND products_sales_xref.product_id = (?)"
-  r <- quickQuery' conn q [toSql date, toSql date2, toSql id]
+  r <- quickQuery' conn q [toSql date, toSql date2, toSql pid]
   disconnect conn
   return $ map (map fromSql) r
 
 -- | yearlySales returns the total sales of said product id for that year.
 yearlySales :: FilePath -> String -> Integer -> IO Integer
-yearlySales dbStr d id = do
+yearlySales dbStr d pid = do
   conn <- connectSqlite3 dbStr
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y', sales_date) = (?) AND products_sales_xref.product_id = (?)"
-  r <- quickQuery' conn q [toSql d, toSql id]
+  r <- quickQuery' conn q [toSql d, toSql pid]
   disconnect conn
   let r'   = head r
   let r''  = head r'
@@ -142,16 +144,17 @@ yearlySales dbStr d id = do
      products matching the given product ID
 -}
 getProdName :: FilePath -> Integer -> IO [String]
-getProdName dbStr id = do
+getProdName dbStr pid = do
   conn <- connectSqlite3 dbStr
   let query = "select product_name from products where product_id = (?)"
-  r <- quickQuery' conn query [toSql id]
+  r <- quickQuery' conn query [toSql pid]
   disconnect conn
   return (map fromSql (head r))
 
 -- | Add a product into the database, returning True if it worked.
 addProd :: FilePath -> String -> Double -> IO Bool
 addProd dbStr name price = do
+  when (name == "") (E.throw InvalidData)
   conn <- connectSqlite3 dbStr
   let q = "INSERT INTO products (product_name, product_price) VALUES (?, ?)"
   r <- run conn q [toSql name, toSql price]
@@ -164,11 +167,13 @@ addUser :: FilePath -> User -> IO Bool
 addUser dbStr usr = do
   conn <- connectSqlite3 dbStr
   let q = "INSERT INTO users (user_name, user_password, user_privilege) VALUES (?, ?, ?)"
-  r <- run conn q [toSql usr.user_name, toSql usr.user_password, toSql usr.user_privilege]
+  pw <- quickHashPassword $ T.unpack usr.userPassword
+  r  <- run conn q [toSql usr.userName, toSql pw, toSql usr.userPrivilege]
   commit conn
   disconnect conn
   return $ r < 0
 
+-- | Return a list of all of the users in the DB, excluding the passwords.
 allCUsers :: FilePath -> IO [CensoredUser]
 allCUsers dbStr = do
   conn <- connectSqlite3 dbStr
@@ -177,36 +182,48 @@ allCUsers dbStr = do
   disconnect conn
   return $ map (desqlCU . tuplify3) r
 
+-- | Fetch a specific user, excluding the password.
 getCUser :: FilePath -> Integer -> IO CensoredUser
-getCUser dbStr id = do
+getCUser dbStr uid = do
   conn   <- connectSqlite3 dbStr
   let q   = "SELECT user_id, user_name, user_privilege FROM user WHERE user_id=(?)"
-  result <- quickQuery' conn q [toSql id]
+  result <- quickQuery' conn q [toSql uid]
   disconnect conn
   return $ (head . map (desqlCU . tuplify3)) result
 
+-- | Get a specific user, including the password.
 getUser :: FilePath -> Integer -> IO User
-getUser dbStr id = do
+getUser dbStr uid = do
   conn   <- connectSqlite3 dbStr
-  let q   = "SELECT * FROM user WHERE user_id=(?)"
-  result <- quickQuery' conn q [toSql id]
+  let q   = "SELECT * FROM users WHERE user_id=(?)"
+  result <- quickQuery' conn q [toSql uid]
   disconnect conn
+  when (result == [[]]) (E.throw NoDataError)
   return $ (head . map (desqlU . tuplify4)) result
 
-searchUsers :: FilePath -> String -> IO [[Integer]]
+isUsersEmpty :: FilePath -> IO Bool
+isUsersEmpty dbStr = do
+  conn <- connectSqlite3 dbStr
+  let query = "SELECT COUNT(1) WHERE EXISTS (SELECT * FROM users)"
+  result <- quickQuery' conn query []
+  disconnect conn
+  return (result == [[]])
+
+-- | Search the list of users by a string search query.
+searchUsers :: FilePath -> String -> IO [Integer]
 searchUsers dbStr term = do
   conn      <- connectSqlite3 dbStr
-  let query  = "SELECT user_id FROM products WHERE user_name LIKE (?)"
+  let query  = "SELECT user_id FROM users WHERE user_name LIKE (?)"
   let term'  = "%" <> term <> "%"
   result    <- quickQuery' conn query [toSql term']
   disconnect conn
-  return $ map (map fromSql) result
+  return $ map (fromSql . head) result
 
 getProd :: String -> Integer -> IO Product
-getProd dbStr id = do
+getProd dbStr pid = do
   conn   <- connectSqlite3 dbStr
   let q   = "SELECT * FROM products WHERE product_id=(?)"
-  result <- quickQuery' conn q [toSql id]
+  result <- quickQuery' conn q [toSql pid]
   disconnect conn
   return $ head $ map (desqlP . tuplify3) result
 
@@ -230,12 +247,26 @@ searchProds dbStr term = do
   disconnect conn
   return $ map (desqlP . tuplify3) result
 
--- | Creates a new user.
-newUser :: FilePath -> String -> String -> Integer -> IO ()
-newUser dbStr name pw priv = do
+getSession :: FilePath -> UUID -> IO Session
+getSession dbStr sid = do
   conn     <- connectSqlite3 dbStr
-  let query = "INSERT INTO users (user_name, user_password, user_privilege) VALUES (?,?,?)"
+  let query  = "SELECT * FROM sessions WHERE session_id = (?)"
+  let query2 = "SELECT user_id FROM sessions WHERE session_id = (?)"
+  result    <- H.quickQuery' conn query  [ toSql . toString $ sid ]
+  result2   <- H.quickQuery' conn query2 [ toSql . toString $ sid ]
+  let uid    = (fromSql . head . head) result2
   disconnect conn
-  return ()
+  cuser     <- getCUser dbStr uid
+  return (desqlS (tuplify3 . head $ result) cuser)
+  
 
+addSession :: FilePath -> Session -> IO Bool
+addSession dbStr sesh = do
+  conn     <- connectSqlite3 dbStr
+  let query = "INSERT INTO sessions (session_id, session_user, session_hash) values (?,?,?)"
+  result   <- run conn query [ toSql (toString sesh.sessionUUID)
+                             , toSql (cuserId sesh.sessionUser)
+                             , toSql sesh.sessionHash ]
+  disconnect conn
+  return $ result > 0
 -- SELECT till_name FROM till WHERE till.till_id=(SELECT al.till_id FROM allowed_till al where al.emp_id = (SELECT emp.emp_id FROM employees emp WHERE emp.name="example"))

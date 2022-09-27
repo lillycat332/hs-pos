@@ -39,11 +39,14 @@
 module Database.HsPOS.Util where
 import Database.HDBC (fromSql, SqlValue)
 import Database.HsPOS.Types
-    ( CensoredUser(..), User(..), Product(Product) ) 
+    ( CensoredUser(..), User(..), Product(Product) )
+import Database.HsPOS.Session ( Session(Session) )
 import qualified Data.Text.Lazy as T
-
+import qualified System.Random as R
+import Data.UUID ( fromString )
+import Data.Maybe (fromJust)
 tuplify3 :: [c] -> (c, c, c)
-tuplify3 [x, y, z] = (x, y, z)
+tuplify3 [a, b, c] = (a, b, c)
 
 tuplify4 :: [d] -> (d, d, d, d)
 tuplify4 [a, b, c, d] = (a,b,c,d)
@@ -51,27 +54,38 @@ tuplify4 [a, b, c, d] = (a,b,c,d)
 {- | "DeSQL" a censored user (Int,Text,Int),
      ie. turn it from SQL types into a CensoredUser. -}
 desqlCU :: (SqlValue, SqlValue, SqlValue) -> CensoredUser
-desqlCU (id, name, priv)    =
-  CensoredUser { cuser_id   = fromSql id
-               , cuser_name = T.pack $ fromSql name
-               , cuser_privilege = fromSql priv
+desqlCU (cuid, name, priv)    =
+  CensoredUser { cuserId   = fromSql cuid
+               , cuserName = T.pack $ fromSql name
+               , cuserPrivilege = fromSql priv
                }
 
 {- | "DeSQL" a user as a tuple (Int,Text,Int),
      ie. turn it from SQL types into a User . -}
 desqlU :: (SqlValue, SqlValue, SqlValue, SqlValue) -> User
-desqlU (id,name,pw,priv) =
-  User { user_id        = fromSql id
-       , user_name      = T.pack $ fromSql name
-       , user_password  = T.pack $ fromSql pw
-       , user_privilege = fromSql priv
+desqlU (uid,name,pw,priv) =
+  User { userId        = fromSql uid
+       , userName      = T.pack $ fromSql name
+       , userPassword  = T.pack $ fromSql pw
+       , userPrivilege = fromSql priv
        }
 
 {- | "DeSQL" a product (Int,String,Double),
      ie. turn it from SQL types into Product. -}
 desqlP :: (SqlValue, SqlValue, SqlValue) -> Product
-desqlP (id, name, price) = Product (fromSql id)
-                                   (fromSql name)
-                                   (fromSql price)
+desqlP (pid, name, price) = Product (fromSql pid)
+                                    (fromSql name)
+                                    (fromSql price)
+desqlS :: (SqlValue, SqlValue, SqlValue) -> CensoredUser -> Session
+desqlS (sid, _, hash) cuser = Session ((fromJust . fromString . fromSql) sid)
+                                        cuser
+                                       (fromSql hash)
+
+-- | create a random generator with the specified seed value
+getRandomGen :: Int -> R.StdGen
+getRandomGen = R.mkStdGen
 
 
+-- | Use the pre-seeded random generator to get a random seed
+getRandomSeed :: IO Int
+getRandomSeed = fst . R.random <$> R.getStdGen

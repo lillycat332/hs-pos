@@ -38,12 +38,20 @@ library
                     , convertible
                     , tuple
                     , directory
-                    -- , password
+                    , jwt
+                    , bcrypt
+                    , bytestring
+                    , random
+                    , uuid
+                    , hashable
     exposed-modules:  Database.HsPOS.Auth
                     , Database.HsPOS.Types
                     , Database.HsPOS.Sqlite
                     , Database.HsPOS.Http
                     , Database.HsPOS.Util
+                    , Database.HsPOS.Session
+
+    ghc-options: -Wall
 
 executable hs-pos
     main-is:          Main.hs
@@ -58,5 +66,6 @@ executable hs-pos
                     , optparse-applicative
                     , convertible
                     , hs-pos
+    ghc-options: -Wall -threaded
     hs-source-dirs:   app
     default-language: Haskell2010
