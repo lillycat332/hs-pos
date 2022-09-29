@@ -49,6 +49,7 @@ import Database.HsPOS.Http
       prodHandler,
       saleHandler,
       loginHandler,
+      stockHandler,
       purgeHandler)
 import Database.HsPOS.Sqlite ( tryCreateTables )
 import Network.Wai.Middleware.RequestLogger ( logStdoutDev )
@@ -143,7 +144,8 @@ main = do
                  >> searchHandler   dbStr
                  >> saleHandler     dbStr
                  >> loginHandler    dbStr
-                 >> purgeHandler    dbStr
+                 >> stockHandler    dbStr
+                 >> purgeHandler    dbStr -- This is last because it's destructive.
                  
   where
     -- Provide the parser to main.

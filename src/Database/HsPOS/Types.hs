@@ -49,15 +49,12 @@
            , Trustworthy
            , ImportQualifiedPost
 #-}
-{- HLINT ignore "Use camelCase" -}
-
 module Database.HsPOS.Types where
 import GHC.Generics ( Generic )
 import Control.Exception qualified as E
 import Data.Aeson qualified as A
 import Data.Text.Lazy qualified as T
 import Data.Hashable qualified as H
--- SQL Tables
 
 data Product where
   Product :: { productId    :: Integer
@@ -68,6 +65,14 @@ data Product where
 
 instance A.ToJSON   Product
 instance A.FromJSON Product
+
+data ProductWithStock where
+  ProductWithStock :: { prod     :: Product
+                      , pInStock :: Integer } -> ProductWithStock
+  deriving (Eq, Ord, Show, Generic)
+
+instance A.ToJSON   ProductWithStock
+instance A.FromJSON ProductWithStock
 
 data User where
   User :: { userId        :: Integer
@@ -117,21 +122,6 @@ data ProductsSalesXref where
                        } -> ProductsSalesXref
   deriving (Eq, Ord, Show, Generic)
 
-data Till where
-  Till :: { tillId   :: Integer
-          , tillName :: T.Text
-          } -> Till
-  deriving (Eq, Ord, Show, Generic)
-
-instance A.ToJSON   Till
-instance A.FromJSON Till
-
-data UserTillXref where
-  UserTillXref :: { xrefUserId   :: Integer  -- Foreign key to user_id
-                  , xrefTillId   :: Integer  -- Foreign key to till_id
-                  } -> UserTillXref
-  deriving (Eq, Ord, Show, Generic)
-
 data Date where
   Date :: { year    :: Integer
           , month   :: Integer
@@ -162,14 +152,21 @@ data LoginRequest where
            , Read, Generic
            , A.FromJSON , A.ToJSON)
 
+data IsOk where
+  IsOk :: { ok :: Bool } -> IsOk
+  deriving (Generic, Eq, Show, A.ToJSON)
+
+-- Error types
+
 data APIError = InvalidData
   deriving (Show, E.Exception)
 
-data DBError = NoDataError
+data DBError = NoDataError | MultipleDataError
   deriving (Show, E.Exception)
 
 {- Smart Constructors
-   These are constructors for our datatypes. They're "smart" because
+   These are
+constructors for our datatypes. They're "smart" because
    they impose restrictions on the construction of said type, making
    illegal state unrepresentable -}
 -- 

@@ -48,7 +48,7 @@ import Database.HDBC
 import Database.HDBC.Sqlite3 (connectSqlite3)
 import Control.Monad (when)
 import Control.Exception qualified as E
-import Database.HsPOS.Types ( CensoredUser (cuserId), User, Product, userName, userPassword, userPrivilege, APIError(InvalidData), DBError(NoDataError) )
+import Database.HsPOS.Types ( CensoredUser (cuserId), User, Product(productId), userName, userPassword, userPrivilege, APIError(InvalidData), DBError(NoDataError, MultipleDataError), ProductWithStock (ProductWithStock) )
 import Database.HsPOS.Session
     ( Session(sessionHash, sessionUUID, sessionUser) )
 import Database.HsPOS.Auth (quickHashPassword)
@@ -66,7 +66,6 @@ purgeDb :: FilePath -> IO ()
 purgeDb dbStr = do
   removeFile dbStr
   tryCreateTables dbStr
-  
 
 -- | Creates the requisite tables for the database.
 tryCreateTables :: FilePath -> IO ()
@@ -76,14 +75,34 @@ tryCreateTables dbStr = do
           , "CREATE TABLE IF NOT EXISTS stock (product_id integer not null constraint stock_pk primary key autoincrement references products, in_stock integer)"
           , "CREATE TABLE IF NOT EXISTS sales (sales_id integer constraint sales_pk primary key autoincrement, sales_date date, number_sold integer)"
           , "CREATE TABLE IF NOT EXISTS products (product_id INTEGER not null primary key autoincrement,product_name TEXT not null,product_price DOUBLE not null)"
-          , "CREATE TABLE IF NOT EXISTS tills (till_id integer not null constraint tills_pk primary key autoincrement, till_name integer)"
-          , "CREATE TABLE IF NOT EXISTS user_till_xref (user_id integer constraint user_till_xref_pk primary key constraint user_till_xref_users_user_id_fk references users, till_id integer constraint user_till_xref_tills_till_id_fk references tills)"
           , "CREATE TABLE IF NOT EXISTS products_sales_xref (product_id integer references products, sales_id integer constraint products_sales_xref_pk primary key references sales)"
-          , "CREATE TABLE IF NOT EXISTS session (session_id text not null primary key, user_id integer references users, session_hash integer not null)"
+          , "CREATE TABLE IF NOT EXISTS sessions (session_id text not null primary key, user_id integer references users, session_hash integer not null)"
           ]
   mapM_ (\x -> run conn x []) q
   commit conn
   disconnect conn
+
+-- | Sets stock of `pid` to `num`
+setStock :: FilePath -> Integer -> Integer -> IO Bool
+setStock dbStr pid num = do
+  conn <- connectSqlite3 dbStr
+  let q = "UPDATE stock SET in_stock=(?) WHERE product_id = (?)"
+  ok <- run conn q [toSql num, toSql pid]
+  commit conn
+  disconnect conn
+  return $ ok >= 1
+
+-- | Gets the stock of a Product. Returns a ProductWithStock
+getInStock :: FilePath -> Product -> IO ProductWithStock
+getInStock dbStr prod = do
+  conn <- connectSqlite3 dbStr
+  let q = "SELECT in_stock FROM stock WHERE product_id = (?)"
+  result <- quickQuery' conn q [toSql prod.productId]
+  disconnect conn
+  return $ case result of
+    []  -> ProductWithStock prod 0
+    [x] -> ProductWithStock prod (fromSql $ head x)
+    _ -> E.throw MultipleDataError
 
 makeSale :: FilePath -> String -> Integer -> Integer -> IO Bool
 makeSale dbStr date pid quant = do
@@ -109,9 +128,10 @@ monthlyTotalSales dbStr d pid = do
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y-%m', sales_date) = (?) AND products_sales_xref.product_id = (?)"
   r <- quickQuery' conn q [toSql d, toSql pid]
   disconnect conn
-  let r'   = head r
-  let r''  = head r'
-  return (fromSql r'' :: Integer)
+  return $ case r of
+    []  -> 0
+    [x] -> fromSql $ head x
+    _  -> E.throw MultipleDataError
 
 monthlySales :: FilePath -> String -> Integer -> IO [Integer]
 monthlySales dbStr d pid = do
@@ -136,9 +156,10 @@ yearlySales dbStr d pid = do
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE strftime('%Y', sales_date) = (?) AND products_sales_xref.product_id = (?)"
   r <- quickQuery' conn q [toSql d, toSql pid]
   disconnect conn
-  let r'   = head r
-  let r''  = head r'
-  return (fromSql r'' :: Integer)
+  return $ case r of
+    []  -> 0
+    [x] -> fromSql $ head x
+    _   -> E.throw MultipleDataError
 
 {- | getProdName returns an IO [String] with the product name of the
      products matching the given product ID
@@ -146,7 +167,7 @@ yearlySales dbStr d pid = do
 getProdName :: FilePath -> Integer -> IO [String]
 getProdName dbStr pid = do
   conn <- connectSqlite3 dbStr
-  let query = "select product_name from products where product_id = (?)"
+  let query = "SEELCT product_name FROM products WHERE product_id = (?)"
   r <- quickQuery' conn query [toSql pid]
   disconnect conn
   return (map fromSql (head r))
@@ -156,8 +177,25 @@ addProd :: FilePath -> String -> Double -> IO Bool
 addProd dbStr name price = do
   when (name == "") (E.throw InvalidData)
   conn <- connectSqlite3 dbStr
-  let q = "INSERT INTO products (product_name, product_price) VALUES (?, ?)"
-  r <- run conn q [toSql name, toSql price]
+  let ins :: Integer = 0
+  let q  = "INSERT INTO products (product_name, product_price) VALUES (?, ?) RETURNING product_id"
+  let q' = "INSERT INTO stock (product_id, in_stock) VALUES (?, ?)"
+  r <- quickQuery' conn q [toSql name, toSql price]
+  let pid = (head . head) r
+  _ <- run conn q' [pid, toSql ins]
+  commit conn
+  disconnect conn
+  return $ case r of
+    []  -> False
+    [_] -> True
+    _   -> E.throw MultipleDataError
+
+-- | Remove product `pid` from the database
+removeProd :: FilePath -> Integer -> IO Bool
+removeProd dbStr pid = do
+  conn <- connectSqlite3 dbStr
+  let q = "DELETE FROM products WHERE product_id=(?)"
+  r <- run conn q [toSql pid]
   commit conn
   disconnect conn
   return $ r < 0
@@ -186,12 +224,16 @@ allCUsers dbStr = do
 getCUser :: FilePath -> Integer -> IO CensoredUser
 getCUser dbStr uid = do
   conn   <- connectSqlite3 dbStr
-  let q   = "SELECT user_id, user_name, user_privilege FROM user WHERE user_id=(?)"
+  let q   = "SELECT user_id, user_name, user_privilege FROM users WHERE user_id=(?)"
   result <- quickQuery' conn q [toSql uid]
   disconnect conn
-  return $ (head . map (desqlCU . tuplify3)) result
+  return $ case result of
+    [[]] -> E.throw NoDataError
+    [x]  -> desqlCU $ tuplify3 x
+    _    -> E.throw MultipleDataError
 
 -- | Get a specific user, including the password.
+-- don't expose this through the API. duh.
 getUser :: FilePath -> Integer -> IO User
 getUser dbStr uid = do
   conn   <- connectSqlite3 dbStr
@@ -199,15 +241,32 @@ getUser dbStr uid = do
   result <- quickQuery' conn q [toSql uid]
   disconnect conn
   when (result == [[]]) (E.throw NoDataError)
-  return $ (head . map (desqlU . tuplify4)) result
+  return $ case result of
+    [[]] -> E.throw NoDataError
+    [x]  -> desqlU $ tuplify4 x
+    _    -> E.throw MultipleDataError
 
+-- | Remove a user from the database.
+removeUser :: FilePath -> Integer -> IO Bool
+removeUser dbStr uid = do
+  conn <- connectSqlite3 dbStr
+  let q = "DELETE FROM users WHERE user_id=(?)"
+  r <- run conn q [toSql uid]
+  commit conn
+  disconnect conn
+  return $ r < 0
+
+-- | Test if there's anything in the users table, returning True if there is.
 isUsersEmpty :: FilePath -> IO Bool
 isUsersEmpty dbStr = do
   conn <- connectSqlite3 dbStr
   let query = "SELECT COUNT(1) WHERE EXISTS (SELECT * FROM users)"
   result <- quickQuery' conn query []
   disconnect conn
-  return (result == [[]])
+  return $ case result of
+    [[]] -> True
+    [x]  -> fromSql $ head x
+    _    -> E.throw MultipleDataError
 
 -- | Search the list of users by a string search query.
 searchUsers :: FilePath -> String -> IO [Integer]
@@ -217,7 +276,9 @@ searchUsers dbStr term = do
   let term'  = "%" <> term <> "%"
   result    <- quickQuery' conn query [toSql term']
   disconnect conn
-  return $ map (fromSql . head) result
+  return $ case result of
+    [[]] -> []
+    x    -> map (fromSql . head) x
 
 getProd :: String -> Integer -> IO Product
 getProd dbStr pid = do
@@ -225,7 +286,10 @@ getProd dbStr pid = do
   let q   = "SELECT * FROM products WHERE product_id=(?)"
   result <- quickQuery' conn q [toSql pid]
   disconnect conn
-  return $ head $ map (desqlP . tuplify3) result
+  return $ case result of
+    [[]] -> E.throw NoDataError
+    [x]  -> desqlP $ tuplify3 x
+    _    -> E.throw MultipleDataError
 
 -- | Returns a list of all the products in the database
 allProds :: FilePath -> IO [Product]
@@ -234,7 +298,9 @@ allProds dbStr = do
   let q   = "SELECT * FROM products"
   result <- quickQuery' conn q []
   disconnect conn
-  return $ map (desqlP . tuplify3) result
+  return $ case result of
+    [[]] -> []
+    x    -> map (desqlP . tuplify3) x
 
 -- | Searches the database for a product, returning a list of matching
 -- | products.
@@ -245,7 +311,9 @@ searchProds dbStr term = do
   let term'  = "%" <> term <> "%"
   result    <- quickQuery' conn query [toSql term']
   disconnect conn
-  return $ map (desqlP . tuplify3) result
+  return $ case result of 
+    [[]] -> []
+    x    -> map (desqlP . tuplify3) x
 
 getSession :: FilePath -> UUID -> IO Session
 getSession dbStr sid = do
@@ -257,16 +325,17 @@ getSession dbStr sid = do
   let uid    = (fromSql . head . head) result2
   disconnect conn
   cuser     <- getCUser dbStr uid
-  return (desqlS (tuplify3 . head $ result) cuser)
+  return $ desqlS (tuplify3 . head $ result) cuser
   
 
 addSession :: FilePath -> Session -> IO Bool
 addSession dbStr sesh = do
   conn     <- connectSqlite3 dbStr
-  let query = "INSERT INTO sessions (session_id, session_user, session_hash) values (?,?,?)"
+  let query = "INSERT INTO sessions (session_id, user_id, session_hash) values (?,?,?)"
   result   <- run conn query [ toSql (toString sesh.sessionUUID)
                              , toSql (cuserId sesh.sessionUser)
                              , toSql sesh.sessionHash ]
   disconnect conn
   return $ result > 0
+
 -- SELECT till_name FROM till WHERE till.till_id=(SELECT al.till_id FROM allowed_till al where al.emp_id = (SELECT emp.emp_id FROM employees emp WHERE emp.name="example"))
