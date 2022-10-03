@@ -34,6 +34,7 @@
   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -47,36 +48,45 @@
 module Database.HsPOS.Http where
 
 import Control.Applicative ()
+import Control.Exception (try)
+import Control.Exception.Base (SomeException)
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
-import qualified Data.Aeson as A
+import Data.Aeson qualified as A
 import Data.ByteString.Char8 (pack)
-import qualified Data.Text.Lazy as T
-import Control.Exception (try, catch)
-import Database.HsPOS.Auth (validateCredentials, quickHashPassword)
+import Data.Text.Lazy qualified as T
+import Data.Time (showGregorian)
+import Database.HsPOS.Auth (validateCredentials)
+import Database.HsPOS.Session (Session (sessionUUID), randomSession)
 import Database.HsPOS.Sqlite
   ( addProd,
+    addSession,
     addUser,
     allCUsers,
     allProds,
+    bottomProd,
     getCUser,
+    getInStock,
     getProd,
+    getSession,
     getUser,
+    isUsersEmpty,
     makeSale,
     monthlySales,
     monthlyTotalSales,
+    percentSalesDiff,
     purgeDb,
     rangeSales,
+    removeProd,
+    removeUser,
     searchProds,
     searchUsers,
+    setStock,
+    topProd,
     yearlySales,
-    getSession,
-    addSession,
-    isUsersEmpty,
-    removeProd, getInStock, removeUser, setStock
   )
-import Database.HsPOS.Types (IsOk(ok, IsOk), LoginRequest (requestName, requestPass), Product (productId, productName, productPrice), User (userName, userPassword), censorUser)
-import Network.HTTP.Types (status400, status418)
+import Database.HsPOS.Types (IsOk (IsOk, ok), LoginRequest (requestName), Product (productId, productName, productPrice), ProductSale, User (userName, userPassword), censorUser, saleDate, saleProduct, saleQuantity)
+import Network.HTTP.Types (status400, status404)
 import Web.Scotty
   ( ScottyM,
     delete,
@@ -85,36 +95,27 @@ import Web.Scotty
     get,
     json,
     jsonData,
+    liftAndCatchIO,
     param,
     post,
+    put,
     status,
     text,
-    liftAndCatchIO
   )
-import Database.HsPOS.Session ( randomSession, Session (sessionUUID) )
-import Control.Exception.Base (SomeException)
-import Web.Scotty.Trans (put)
+
 -- Connection handlers --
-{- Possibly of note is the pervasive use of the `liftIO` function which may seem 
-   like an awful lot of boilerplate, but it's necessary to move IO actions into 
-   the ScottyM monad (which is an IO monad, but not *THE* IO monad) -}
+{- Possibly of note is the pervasive use of the `liftIO` function which may seem
+   like an awful lot of boilerplate, but it's necessary to move IO actions into
+   the ScottyM monad (which is an IO monad, but not *THE* IO monad)
+
+   If you'd like to know more about monads, I'd recommend checking out
+   the [https://wiki.haskell.org/Typeclassopedia](Typeclassopedia) :)
+-}
 
 -- | Serve the index page (ie. the main page of the app)
 -- | Files are handled by scotty automatically, this is just for explicitness.
 static :: ScottyM ()
 static = get "/" $ file "./public/index.html"
-
--- | Handle search requests
--- Not sure if i'll use this, it's a bit more efficient to search on the client
--- using a filter/search function, but it's here if i need it.
-
--- It does actually come in handy for debugging! :) Easier than writing SQL queries
-searchHandler :: FilePath -> ScottyM ()
-searchHandler dbStr = do
-  get "/search/prods/:query" $ do
-    query <- param "query"
-    result <- liftIO $ searchProds dbStr query
-    json result
 
 -- | Handle listing, searching and adding users
 userHandler :: FilePath -> ScottyM ()
@@ -143,11 +144,12 @@ userHandler dbStr = do
     json result
 
   delete "/users/:id" $ do
-    pid  <- param "id"
-    res  <- liftIO $ removeUser dbStr pid
+    pid <- param "id"
+    res <- liftIO $ removeUser dbStr pid
     -- send the result to the client.
     json res
 
+-- | Handle listing, adding and removing products
 prodHandler :: FilePath -> ScottyM ()
 prodHandler dbStr = do
   get "/prods/:id/" $ do
@@ -160,6 +162,16 @@ prodHandler dbStr = do
     let prodsJSON = map A.toJSON prods
     json $ A.toJSON prodsJSON
 
+  -- Top product ~ the product with the most sales
+  get "/prods/top" $ do
+    prod <- liftIO (topProd dbStr)
+    json prod
+
+  -- Bottom product ~ the product with the least sales
+  get "/prods/bottom" $ do
+    prod <- liftIO (bottomProd dbStr)
+    json prod
+
   post "/prods/" $ do
     prod :: Product <- jsonData
     -- didn't send us a name so we can't add them
@@ -171,26 +183,27 @@ prodHandler dbStr = do
     res <- liftIO $ addProd dbStr name price
     -- send the result to the client (i.e. did it work or nah)
     json res
-  
+
   delete "/prods/:id" $ do
-    pid  <- param "id"
-    res  <- liftIO $ removeProd dbStr pid
+    pid <- param "id"
+    res <- liftIO $ removeProd dbStr pid
     -- send the result to the client.
     json res
 
 -- | Handles requests for stock data
 stockHandler :: FilePath -> ScottyM ()
 stockHandler dbStr = do
-  get "/stock/" $ do
-    prod :: Product <- jsonData
+  get "/stock/:id" $ do
+    pid <- param "id"
+    prod <- liftIO $ getProd dbStr pid
     stockData <- liftIO $ getInStock dbStr prod
     json stockData
 
   get "/stock/all/" $ do
-    prods     <- liftIO $ allProds dbStr
+    prods <- liftIO $ allProds dbStr
     stockData <- liftIO $ mapM (getInStock dbStr) prods
     json stockData
-  
+
   put "/stock/:pid/:num" $ do
     pid <- param "pid"
     num <- param "num"
@@ -226,7 +239,7 @@ saleHandler dbStr = do
     sales <- liftIO $ rangeSales dbStr date1 date2 pid
     -- Convert the result to json, then send it over HTTP as a reply.
     json sales
-    
+
   get "/sales/total/:y/:m/:id/" $ do
     {- Fetch the parameters from the url (ie. :y, :m :id in the form
        http://localhost:3000/sales/2022/07/5) -}
@@ -247,14 +260,28 @@ saleHandler dbStr = do
     -- Convert the result to text, then send it over HTTP as a reply.
     text $ T.pack $ show sales
 
-  post "/sales/:y/:m/:d/" $ do
-    prod :: Product <- jsonData
-    year <- param "y"
-    month <- param "m"
-    day <- param "d"
-    let date :: String = year <> "-" <> month <> "-" <> day
-    res <- liftIO $ makeSale dbStr date (prod.productId) 1
+  post "/sales/" $ do
+    sale :: ProductSale <- jsonData
+    -- return code 400: probably a bad request.
+    let pid = sale.saleProduct.productId
+    let date = showGregorian $ sale.saleDate
+    let quant = sale.saleQuantity
+    when (pid == 0 || date == "" || quant == 0) (status status400 >> finish)
+    res <- liftIO $ makeSale dbStr date pid quant
     json res
+
+  get "/sales/percent-diff/" $ do
+    sales <- liftIO $ percentSalesDiff dbStr
+    json sales
+
+-- post "/sales/:y/:m/:d/" $ do
+--   prod :: Product <- jsonData
+--   year <- param "y"
+--   month <- param "m"
+--   day <- param "d"
+--   let date :: String = year <> "-" <> month <> "-" <> day
+--   res <- liftIO $ makeSale dbStr date (prod.productId) 1
+--   json res
 
 -- | Handle login requests, session creation, validation and onboarding.
 loginHandler :: FilePath -> ScottyM ()
@@ -264,7 +291,7 @@ loginHandler dbStr = do
     -- We want the JSON body of the request, which should contain the
     -- username and password.
     req :: LoginRequest <- jsonData
-    uid  <- liftAndCatchIO $ searchUsers dbStr (T.unpack req.requestName)
+    uid <- liftAndCatchIO $ searchUsers dbStr (T.unpack req.requestName)
     -- Try to find the user in the DB.
     user <- liftAndCatchIO $ getUser dbStr (head uid)
     -- Now that we've gotten the request, let's check if it's correct.
@@ -280,7 +307,7 @@ loginHandler dbStr = do
     -- Let's hand the session to the frontend.
     -- They can retain this for later use.
     json sesh
-    
+
   post "/session/" $ do
     -- Check a user's session
     sesh :: Session <- jsonData
@@ -294,8 +321,26 @@ loginHandler dbStr = do
     -- are there any users in the database?
     -- if there are, we don't want to present the user with the onboarding page.
     res <- liftIO $ isUsersEmpty dbStr
-    let ok' :: IsOk = IsOk { ok = res }
+    let ok' :: IsOk = IsOk {ok = res}
     json ok'
+
+-- | Handle search requests
+-- Not sure if i'll use this, it's a bit more efficient to search on the client
+-- using a filter/search function, but it's here if i need it.
+-- It does come in handy for debugging.
+searchHandler :: FilePath -> ScottyM ()
+searchHandler dbStr = do
+  get "/search/prods/:query" $ do
+    query <- param "query"
+    result <- liftIO $ try $ searchProds dbStr query
+
+    -- If it's an error, return a 404. Else, return the matching data.
+    case result of
+      Left (e :: SomeException) -> do
+        liftIO $ print e
+        status status404
+        finish
+      Right res -> json res
 
 -- | Purges the entire database, deleting then recreating it!
 -- Be very careful with this.

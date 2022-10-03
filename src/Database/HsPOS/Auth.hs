@@ -1,4 +1,4 @@
-{- 
+{-
   hs-pos
   Auth.hs
   Created by Lilly Cham on 7/5/22.
@@ -34,17 +34,18 @@
   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -}
-
-
-{-# LANGUAGE Trustworthy, ScopedTypeVariables, OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Trustworthy #-}
 
 module Database.HsPOS.Auth where
+
+import qualified Crypto.BCrypt as P
+import qualified Data.ByteString as BS
+import Data.ByteString.Char8 (pack, unpack)
 import Data.Maybe (fromJust)
-import qualified Data.Text.Lazy           as T
-import safe Database.HsPOS.Types ( LoginRequest, LoginRequest(requestPass) )
-import qualified Crypto.BCrypt            as P
-import Data.ByteString.Char8 ( pack, unpack )
-import qualified Data.ByteString          as BS
+import qualified Data.Text.Lazy as T
+import safe Database.HsPOS.Types (LoginRequest (requestPass))
 
 -- | Validates a given login request, returning false if it's invalid.
 validateCredentials :: LoginRequest -> BS.ByteString -> Bool
@@ -52,5 +53,6 @@ validateCredentials creds hashed = P.validatePassword hashed (pack (T.unpack cre
 
 -- | Hash a password
 quickHashPassword :: String -> IO String
-quickHashPassword pass = P.hashPasswordUsingPolicy P.fastBcryptHashingPolicy (pack pass) >>= \bstring
-  -> return $ unpack (fromJust bstring)
+quickHashPassword pass =
+  P.hashPasswordUsingPolicy P.fastBcryptHashingPolicy (pack pass) >>= \bstring ->
+    return $ unpack (fromJust bstring)
