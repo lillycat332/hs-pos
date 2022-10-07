@@ -36,6 +36,7 @@
 -}
 {-# LANGUAGE Trustworthy #-}
 
+-- | This module contains utility functions for hs-pos.
 module Database.HsPOS.Util where
 
 import Data.Maybe (fromJust)

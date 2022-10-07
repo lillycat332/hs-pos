@@ -52,6 +52,7 @@ library
                     , Database.HsPOS.Http
                     , Database.HsPOS.Util
                     , Database.HsPOS.Session
+                    , Database.HsPOS.Math
 
     ghc-options: -Wall -O3
 

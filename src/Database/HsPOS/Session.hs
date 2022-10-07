@@ -40,6 +40,7 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE Trustworthy #-}
 
+-- | This module contains a session type and the functions to generate and use it.
 module Database.HsPOS.Session where
 
 import Data.Aeson qualified as A

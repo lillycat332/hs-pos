@@ -43,6 +43,9 @@
 
 {- HLINT ignore "Use camelCase" -}
 
+-- | This module contains the main function for the hs-pos executable.
+--   It is responsible for parsing command line arguments and running the
+--   server itself.
 module Main where
 
 import Control.Applicative ((<**>))

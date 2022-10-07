@@ -45,6 +45,7 @@
 
 {- HLINT ignore "Use camelCase" -}
 
+-- | This module contains Haskell interfaces to SQL queries for the SQLite database.
 module Database.HsPOS.Sqlite where
 
 import Control.Exception qualified as E
@@ -149,6 +150,7 @@ makeSale dbStr date pid quant = do
   let q1 = "INSERT INTO sales (sales_date, number_sold) VALUES (?, ?) RETURNING sales_id"
   let q2 = "INSERT INTO products_sales_xref (product_id, sales_id) values (?, ?)"
   let q3 = "UPDATE stock SET in_stock=in_stock - 1 WHERE product_id = (?) and in_stock > 0"
+  let q4 = "INSERT INTO out_of_stock (product_id, oos_date) values (?, ?)"
   sid <- quickQuery' conn q1 [toSql date, toSql quant]
   _ <- quickQuery' conn q2 [toSql pid, (head . head) sid]
   ok <- run conn q3 [toSql pid]
@@ -156,11 +158,11 @@ makeSale dbStr date pid quant = do
   disconnect conn
   return $ ok >= 1
 
-percentSalesDiff :: FilePath -> IO Double
+percentSalesDiff :: FilePath -> IO (Double, Bool)
 percentSalesDiff dbStr = do
   conn <- connectSqlite3 dbStr
-  let q1 = "SELECT sum(number_sold) FROM sales WHERE sales_date >= date('now', '-1 month')"
-  let q2 = "SELECT sum(number_sold) FROM sales WHERE sales_date >= date('now', '-2 month') AND sales_date < date('now', '-1 month')"
+  let q1 = "SELECT coalesce(sum(number_sold), 0) FROM sales WHERE sales_date >= date('now', '-1 month')"
+  let q2 = "SELECT coalesce(sum(number_sold), 0) FROM sales WHERE sales_date >= date('now', '-2 month') AND sales_date < date('now', '-1 month')"
   result <- quickQuery' conn q1 []
   result2 <- quickQuery' conn q2 []
   disconnect conn
@@ -174,7 +176,8 @@ percentSalesDiff dbStr = do
             y' = fromSql $ head y
             absDiff = abs (x' - y')
             avg = (x' + y') / 2
-         in return $ absDiff / avg
+            up = x' > y'
+         in return (absDiff / avg, up)
       _ -> E.throw MultipleDataError
     _ -> E.throw MultipleDataError
 

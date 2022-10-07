@@ -45,6 +45,9 @@
 
 {- HLINT ignore "Use camelCase" -}
 
+-- | This module contains the HTTP handlers for the hs-pos API. These are
+--   sequenced together in the Main.hs file, and then run by the Warp server in
+--   response to HTTP requests.
 module Database.HsPOS.Http where
 
 import Control.Applicative ()

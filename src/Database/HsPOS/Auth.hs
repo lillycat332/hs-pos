@@ -38,6 +38,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Trustworthy #-}
 
+-- | This module contains authentication functions for hs-pos.
 module Database.HsPOS.Auth where
 
 import qualified Crypto.BCrypt as P

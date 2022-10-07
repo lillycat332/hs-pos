@@ -46,6 +46,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
+-- | This module contains the types used in the hs-pos library, and operations on them.
 module Database.HsPOS.Types where
 
 import Control.Exception qualified as E
