@@ -1,55 +1,22 @@
-{-
-  hs-pos
-  Main.hs
-  Created by Lilly Cham
-
-  Copyright (c) 2022, Lilly Cham
-
-  All rights reserved.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions are met:
-
-      * Redistributions of source code must retain the above copyright
-        notice, this list of conditions and the following disclaimer.
-
-      * Redistributions in binary form must reproduce the above
-        copyright notice, this list of conditions and the following
-        disclaimer in the documentation and/or other materials provided
-        with the distribution.
-
-      * Neither the name of Lilly Cham nor the names of other
-        contributors may be used to endorse or promote products derived
-        from this software without specific prior written permission.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
--}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Trustworthy #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 
-{- HLINT ignore "Use camelCase" -}
-
--- | This module contains the main function for the hs-pos executable.
---   It is responsible for parsing command line arguments and running the
---   server itself.
+-- | Module: Main
+-- License: BSD3
+-- Stability: Stable
+-- Portability: GHC
+-- Description: Main module - entry point for hs-pos
+--
+-- This module contains the main function for the hs-pos executable.
+-- It is responsible for parsing command line arguments and running the
+-- server itself.
 module Main where
 
 import Control.Applicative ((<**>))
 import Control.Monad (unless)
+import Database.HDBC.Sqlite3 (connectSqlite3)
 import Database.HsPOS.Http
   ( loginHandler,
     prodHandler,
@@ -92,7 +59,7 @@ import Options.Applicative
     switch,
     value,
   )
-import qualified Options.Applicative as O
+import Options.Applicative qualified as O
 import Web.Scotty (middleware, scotty)
 
 {- Here are our command line arguments. We use this to pass parameters
@@ -103,7 +70,8 @@ data Args = Args
     optQuiet :: Bool
   }
 
--- | This creates a parser for our command line arguments.
+-- | This creates a parser for our command line arguments, and defines the help text
+--   shown when an invalid argument or -h/--help is passed.
 args :: Parser Args
 args =
   Args
@@ -136,12 +104,16 @@ main :: IO ()
 main = do
   -- Instantiate a parsed version of opts.
   popts <- execParser opts
-  -- Try and create all the tables we want.
-  tryCreateTables $ optDb popts
+
+  conn <- connectSqlite3 (optDb popts)
+  -- Try and create all the tables + views we want in the database.
+  _ <- tryCreateTables conn
   -- These are lexically bound to the context of the following do block.
   let port = optPort popts
-      dbStr = optDb popts
-   in {- Run the webserver on the given port. The body of this block
+      dbPath = optDb popts
+   in -- Open a connection to the database.
+      -- We clone it so that we can use it in multiple threads.
+      {- Run the webserver on the given port. The body of this block
          sets policies/options, and then handles setting routes from
          the handlers. -}
       scotty port $ do
@@ -157,13 +129,13 @@ main = do
            allUsersHandler, etc. Each handler handles a route and
            what should be done when a client accesses them.  -}
         static
-          >> userHandler dbStr
-          >> prodHandler dbStr
-          >> searchHandler dbStr
-          >> saleHandler dbStr
-          >> loginHandler dbStr
-          >> stockHandler dbStr
-          >> purgeHandler dbStr -- This is last because it's destructive.
+          >> userHandler conn
+          >> prodHandler conn
+          >> searchHandler conn
+          >> saleHandler conn
+          >> loginHandler conn
+          >> stockHandler conn
+          >> purgeHandler dbPath -- This is last because it's destructive.
   where
     -- Provide the parser to main.
     opts =

@@ -29,3 +29,4 @@ ec-secp*
 public/*.js
 public/197.bundle.js.LICENSE.txt
 public/*.js.LICENSE.txt
+public/assets/*

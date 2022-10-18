@@ -1,52 +1,17 @@
-{-
-  hs-pos
-  Types.hs
-  Created by Lilly Cham on 7/5/22.
-
-  Copyright (c) 2022, Lilly Cham
-
-  All rights reserved.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions are met:
-
-      * Redistributions of source code must retain the above copyright
-        notice, this list of conditions and the following disclaimer.
-
-      * Redistributions in binary form must reproduce the above
-        copyright notice, this list of conditions and the following
-        disclaimer in the documentation and/or other materials provided
-        with the distribution.
-
-      * Neither the name of Lilly Cham nor the names of other
-        contributors may be used to endorse or promote products derived
-        from this software without specific prior written permission.
-
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
--}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Trustworthy #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 
--- | This module contains the types used in the hs-pos library, and operations on them.
+-- | Module: Database.HsPOS.Types
+-- License: BSD3
+-- Stability: Stable
+-- Portability: GHC
+-- Description: Types used in the hs-pos library, and operations on them.
+-- This module contains types used in the hs-pos library, and operations on them.
 module Database.HsPOS.Types where
 
 import Control.Exception qualified as E
@@ -84,7 +49,7 @@ instance A.ToJSON ProductWithStock
 
 instance A.FromJSON ProductWithStock
 
--- | A user
+-- | A user.
 data User where
   User ::
     { userId :: Integer,
@@ -101,7 +66,7 @@ instance A.FromJSON User
 
 -- | Same as User, but excluding the Password field (for sending to client)
 -- Not actually a table, just an "illusion" of one, for the client.
--- Sort of like a view.
+-- Sort of like a view. In the database, there is a view table for this.
 data CensoredUser where
   CensoredUser ::
     { cuserId :: Integer,

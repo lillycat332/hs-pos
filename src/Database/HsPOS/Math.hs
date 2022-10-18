@@ -1,28 +1,42 @@
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE Safe #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Trustworthy #-}
 
--- | This module includes some math functions that are not included in the
---    standard Haskell libraries, but are needed for the HsPOS project.
---    They are primarily used for statistical calculations, however, they are not
---    specific to statistics or to HsPOS. Not all of them are used in the current
---    version of HsPOS, some were used in previous versions. They are included
---    here for completeness and for future use. Everything in this module is marked
---    as INLINE for performance. Additionally, this module makes use of bang patterns
---    for none-list values.
+-- | Module: Database.HsPOS.Math
+-- License: BSD3
+-- Stability: Unstable
+-- Portability: GHC
+-- Description: Math functions for HsPOS.
+-- This module includes some math functions that are not included in the
+-- standard Haskell libraries, but are needed for the HsPOS project.
+-- They are primarily used for statistical calculations, however, they are not
+-- specific to statistics or to HsPOS. Not all of them are used in the current
+-- version of HsPOS, some were used in previous versions. They are included
+-- here for completeness and for future use. Everything in this module is marked
+-- as INLINE for performance. Additionally, this module makes use of bang patterns
+-- for none-list values.
 module Database.HsPOS.Math where
 
+import Data.Vector (Vector)
+import Data.Vector qualified as V
+
+-- | Euler's constant - ie. "e".
+eulersNumber :: Double
+eulersNumber = exp 1
+
+-- | imaginary unit
+i :: Double
+i = sqrt (-1)
+
 -- | Calculates the variation for a list of numbers.
-variance :: Floating a => [a] -> a
+variance :: Floating a => Vector a -> a
 -- Explanation for this perhaps non-obvious code:
 -- 1. Calculate the mean of the list (avg = average xs)
--- 2. Composite the following: (. operator is function composition)
---   1. Calculate the squared differences from the mean (map ((**2) . (-) avg))
---   2. average that
---   3. take the square root of the average
+-- 2. Composite (^2) and (-) onto the mean, then map (<$>) over the list
 -- 3. Apply the composite to the list
 -- 4. Return the result
-variance xs = average . map ((** 2) . (-) avg) $ xs
+variance xs = average $ (** 2) . (-) avg <$> xs
   where
     !avg = average xs
 {-# INLINE variance #-}
@@ -30,21 +44,22 @@ variance xs = average . map ((** 2) . (-) avg) $ xs
 -- | Calculate the std. deviation of a list of Floating numbers. Since standard
 --   deviation is merely the root of variation, stddev is just a composite of
 --   sqrt and variance.
-stddev :: Floating a => [a] -> a
+stddev :: (Floating a, Ord a) => Vector a -> a
 -- eta-reduced.
 stddev = sqrt . variance
 {-# INLINE stddev #-}
 
 -- | Calculate the average of a list of Floating numbers.
-average :: Floating a => [a] -> a
+average :: Floating a => Vector a -> a
 -- eta reduced.
-average = (/) <$> sum <*> realToFrac . length
+average = (/) <$> sum <*> realToFrac . V.length
 {-# INLINE average #-}
 
 -- | Calculate the Covariance of two lists of Floating numbers.
 -- they must be of the same length. If they are not, the result is undefined.
-covariance :: Floating a => [a] -> [a] -> a
--- You might be looking at this and thinking "WTF is this?". I'll explain.
+covariance :: Floating a => Vector a -> Vector a -> a
+-- You might be looking at this and thinking "What the **** is this?".
+-- Here's an explanation of sorts:
 -- First, the averages are calculated. This is put in a where clause so that it
 -- is only calculated once. (referential transparency should guarantee that
 -- this is the case, but I'm not sure if it does)
@@ -63,37 +78,50 @@ covariance :: Floating a => [a] -> [a] -> a
 -- - (avgY -) <$> ys - the difference between each element of ys and avgY
 -- sum - sum the list
 -- length xs - get the length of xs (the length of ys should the same)
--- realToFrac - convert the length of the list to a fractional number (GHC infers that it is of type a)
+-- realToFrac - convert the length of the list to a Floating number (GHC infers that it is of type a)
 -- (/) - divide the sum by the length
 -- And that gives us the covariance!
 covariance xs ys =
   (/ len)
     . sum
-    $ zipWith (*) ((avgX -) <$> xs) ((avgY -) <$> ys)
+    $ V.zipWith (*) ((avgX -) <$> xs) ((avgY -) <$> ys)
   where
-    !len = realToFrac . length $ xs
+    !len = realToFrac . V.length $ xs
     !avgX = average xs
     !avgY = average ys
 {-# INLINE covariance #-}
 
 -- | Calculate the Correlation Coefficient of two lists of Floating point numbers.
 --    They must be of the same length. If they are not, the result is undefined.
-correlation :: Floating a => [a] -> [a] -> a
+correlation :: (Floating a, Ord a) => Vector a -> Vector a -> a
 -- Self explanatory.
 correlation xs ys = covariance xs ys / (stddev xs * stddev ys)
 {-# INLINE correlation #-}
 
--- | Calculate the Linear Regression between two Vectors of Floating point numbers.
---      The first Vector is the independent variable, the second is the dependent variable.
---      The result is a tuple of the slope and the y-intercept of the line of best fit.
---      The two Vectors must be of the same length. If they are not, the result is undefined.
-linearRegression :: Floating a => [a] -> [a] -> (a, a)
-linearRegression xs ys = (alpha, beta)
+-- | Calculate the absolute difference between two numbers.
+--   Shorthand for abs (x - y)
+absDiff :: Num a => a -> a -> a
+-- eta reduced.
+absDiff = (abs .) . (-)
+{-# INLINE absDiff #-}
+
+-- | leastSq returns a function (Floating a => a -> a) which returns the estimated
+--    value of y for a given x. It uses the least squares method to calculate the
+--    function. The function takes two lists of Floating point numbers. They must
+--    be of the same length. If they are not, the result is undefined, as leastSq
+--    operates on paired data.
+leastSq :: Floating a => Vector a -> Vector a -> (a -> a)
+leastSq xs ys = \x -> m * x + b
   where
-    !c = covariance xs ys
-    !avgx = variance xs
-    !avgy = variance ys
-    !n = fromIntegral $ length xs
-    !beta = c / avgy
-    !alpha = avgy - beta / avgx
-{-# INLINE linearRegression #-}
+    !len = realToFrac . V.length $ xs
+    !m =
+      -- Slope
+      ( len
+          * V.sum (V.zipWith (*) xs ys)
+          - sum xs * sum ys
+      )
+        / (len * V.sum ((** 2) <$> xs) - sum xs ** 2)
+    !b =
+      -- y-intercept
+      (V.sum ys - m * sum xs)
+        / len
