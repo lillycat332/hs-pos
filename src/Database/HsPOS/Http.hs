@@ -26,7 +26,7 @@ import Data.ByteString.Char8 (pack)
 import Data.Text.Lazy qualified as T
 import Data.Time (showGregorian)
 import Database.HDBC (clone)
-import Database.HDBC.Sqlite3 (Connection)
+import Database.HDBC.PostgreSQL (Connection)
 import Database.HsPOS.Auth (validateCredentials)
 import Database.HsPOS.Session (Session (sessionUUID), randomSession)
 import Database.HsPOS.Sqlite
@@ -42,6 +42,7 @@ import Database.HsPOS.Sqlite
     getSession,
     getUser,
     isUsersEmpty,
+    leastSqProd,
     makeSale,
     monthlySales,
     monthlyTotalSales,
@@ -57,6 +58,7 @@ import Database.HsPOS.Sqlite
     yearlySales,
   )
 import Database.HsPOS.Types (IsOk (IsOk, ok), LoginRequest (requestName), Product (productId, productName, productPrice), ProductSale, User (userName, userPassword), censorUser, saleDate, saleProduct, saleQuantity)
+import Debug.Trace (traceM)
 import Network.HTTP.Types (status400, status404)
 import Web.Scotty
   ( ScottyM,
@@ -127,12 +129,14 @@ userHandler db = do
 -- | Handle listing, adding and removing products
 prodHandler :: Connection -> ScottyM ()
 prodHandler db = do
+  -- Select a product by ID
   get "/prods/:id/" $ do
     conn <- liftAndCatchIO $ clone db
     pid <- param "id"
     prod <- liftIO $ getProd conn pid
     json $ A.toJSON prod
 
+  -- All products
   get "/prods/all" $ do
     conn <- liftAndCatchIO $ clone db
     prods <- liftIO (allProds conn)
@@ -151,6 +155,7 @@ prodHandler db = do
     prod <- liftIO (bottomProd conn)
     json prod
 
+  -- Add a product
   post "/prods/" $ do
     conn <- liftAndCatchIO $ clone db
     prod :: Product <- jsonData
@@ -205,7 +210,7 @@ saleHandler db = do
     month <- param "m"
     year <- param "y"
     let date = year <> "-" <> month
-    sales <- liftIO $ monthlySales db date pid
+    sales <- liftIO $ monthlySales conn date pid
     -- Convert the result to text, then send it over HTTP as a reply.
     json sales
 
@@ -264,11 +269,16 @@ saleHandler db = do
     sales <- liftIO $ percentSalesDiff conn
     json sales
 
--- get "/sales/predicted/:id/:num" $ do
---   pid <- param "id"
---   num <- param "num"
---   salesPrev <- liftIO $ rateOfSales conn pid num
---   json sales
+  get "/sales/predicted/:id/:num" $ do
+    conn <- liftAndCatchIO $ clone db
+    pid <- param "id"
+    num <- param "num"
+    traceM $ show pid
+    traceM $ show num
+    salesPrev <- liftIO $ leastSqProd conn pid num
+    traceM $ show salesPrev
+    traceM "PRINTED LEAST SQ SALES"
+    json salesPrev
 
 -- post "/sales/:y/:m/:d/" $ do
 --   prod :: Product <- jsonData
@@ -344,8 +354,9 @@ searchHandler db = do
 
 -- | Purges the entire database, deleting then recreating it!
 -- Be very careful with this.
-purgeHandler :: FilePath -> ScottyM ()
-purgeHandler dbPath =
+purgeHandler :: Connection -> ScottyM ()
+purgeHandler db =
   delete "/UNSAFE-PURGE-ALL-CHECK-FIRST-IM-SERIOUS/" $
-    liftIO (purgeDb dbPath)
-      >> json True
+    liftAndCatchIO $
+      clone db >>= \conn ->
+        liftIO (purgeDb conn)

@@ -10,5 +10,6 @@ pkgs.mkShell {
     cabal-install
     haskell.compiler.ghc924
     sqlite
+    postgresql
   ];
 }

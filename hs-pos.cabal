@@ -32,6 +32,7 @@ library
                     , aeson
                     , HDBC
                     , HDBC-sqlite3
+                    , HDBC-postgresql
                     , http-types
                     , text
                     , optparse-applicative
@@ -45,6 +46,7 @@ library
                     , hashable
                     , time
                     , vector
+
 
     exposed-modules:  Database.HsPOS.Auth
                     , Database.HsPOS.Types
@@ -65,6 +67,7 @@ executable hs-pos
                     , wai-middleware-static
                     , aeson
                     , HDBC-sqlite3
+                    , HDBC-postgresql
                     , http-types
                     , text
                     , optparse-applicative

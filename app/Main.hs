@@ -16,7 +16,7 @@ module Main where
 
 import Control.Applicative ((<**>))
 import Control.Monad (unless)
-import Database.HDBC.Sqlite3 (connectSqlite3)
+import Database.HDBC.PostgreSQL (connectPostgreSQL)
 import Database.HsPOS.Http
   ( loginHandler,
     prodHandler,
@@ -65,7 +65,9 @@ import Web.Scotty (middleware, scotty)
 {- Here are our command line arguments. We use this to pass parameters
    in that affect the operation of the entire program. -}
 data Args = Args
-  { optDb :: FilePath,
+  { optDbName :: String,
+    optDbHost :: String,
+    optDbUser :: String,
     optPort :: Int,
     optQuiet :: Bool
   }
@@ -78,10 +80,26 @@ args =
     <$> strOption
       ( long "db"
           <> short 'd'
-          <> help "Path to the database store"
+          <> help "Database name"
           <> showDefault
-          <> value "store.db"
-          <> metavar "<path to file>"
+          <> value "db"
+          <> metavar "<postgres db name>"
+      )
+    <*> strOption
+      ( long "host"
+          <> short 'o'
+          <> help "Database Host"
+          <> showDefault
+          <> value "localhost"
+          <> metavar "<postgres db host>"
+      )
+    <*> strOption
+      ( long "user"
+          <> short 'u'
+          <> help "Database User"
+          <> showDefault
+          <> value "postgres"
+          <> metavar "<postgres db user>"
       )
     <*> option
       auto
@@ -105,12 +123,11 @@ main = do
   -- Instantiate a parsed version of opts.
   popts <- execParser opts
 
-  conn <- connectSqlite3 (optDb popts)
+  conn <- connectPostgreSQL ("host=" <> (optDbHost popts) <> " dbname=" <> (optDbName popts) <> " user=" <> (optDbUser popts))
   -- Try and create all the tables + views we want in the database.
   _ <- tryCreateTables conn
   -- These are lexically bound to the context of the following do block.
   let port = optPort popts
-      dbPath = optDb popts
    in -- Open a connection to the database.
       -- We clone it so that we can use it in multiple threads.
       {- Run the webserver on the given port. The body of this block
@@ -135,7 +152,7 @@ main = do
           >> saleHandler conn
           >> loginHandler conn
           >> stockHandler conn
-          >> purgeHandler dbPath -- This is last because it's destructive.
+          >> purgeHandler conn -- This is last because it's destructive.
   where
     -- Provide the parser to main.
     opts =
