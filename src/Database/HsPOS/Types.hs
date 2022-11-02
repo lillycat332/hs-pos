@@ -146,6 +146,10 @@ data IsOk where
   IsOk :: {ok :: Bool} -> IsOk
   deriving (Generic, Eq, Show, A.ToJSON)
 
+data PredSale where
+  PredSale :: {predSale :: Double} -> PredSale
+  deriving (Generic, Eq, Show, A.ToJSON)
+
 -- Error types
 
 -- | Indicates failure of an API call.

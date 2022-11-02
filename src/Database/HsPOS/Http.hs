@@ -58,7 +58,6 @@ import Database.HsPOS.Sqlite
     yearlySales,
   )
 import Database.HsPOS.Types (IsOk (IsOk, ok), LoginRequest (requestName), Product (productId, productName, productPrice), ProductSale, User (userName, userPassword), censorUser, saleDate, saleProduct, saleQuantity)
-import Debug.Trace (traceM)
 import Network.HTTP.Types (status400, status404)
 import Web.Scotty
   ( ScottyM,
@@ -202,6 +201,24 @@ stockHandler db = do
 -- | Handle sales data requests, and adding sales into the database.
 saleHandler :: Connection -> ScottyM ()
 saleHandler db = do
+  -- At the top because of order of execution issues
+  -- Fetch predicted sales for a product
+  get "/sales/predicted/:id/:num" $ do
+    conn <- liftAndCatchIO $ clone db
+    pid :: Integer <- param "id"
+    num :: Integer <- param "num"
+    -- If the number of sales inputted is zero or negative we can't provide
+    -- meaningful data. This is not a bad request, but we can't do anything useful.
+    -- Send back 0, then bail out.
+    when (num <= 0) (text "0" >> finish)
+    salesPrev <- liftIO $ leastSqProd conn pid num
+    -- Don't send invalid numbers to the client
+    when (isInfinite salesPrev || isNaN salesPrev || salesPrev < 0) (text "0" >> finish)
+    -- We have to divide by 24 because we're predicting sales per day but leastSqProd
+    -- returns sales per hour.
+    text . T.pack . show $ salesPrev / 24.0
+
+  -- get sales for a month
   get "/sales/:y/:m/:id/" $ do
     conn <- liftAndCatchIO $ clone db
     {- Fetch the parameters from the url (ie. :date, :id in the form
@@ -209,13 +226,12 @@ saleHandler db = do
     pid <- param "id"
     month <- param "m"
     year <- param "y"
-    let date = year <> "-" <> month
+    let date = year <> "-" <> month <> "-01"
     sales <- liftIO $ monthlySales conn date pid
     -- Convert the result to text, then send it over HTTP as a reply.
     json sales
 
-  -- This really should be JSON but it's a bit late to change it now...
-  -- ...shouldn't all of this be JSON?
+  -- get sales for a year range
   get "/sales/:y/:m/to/:y2/:m2/:id/" $ do
     conn <- liftAndCatchIO $ clone db
     pid <- param "id"
@@ -231,6 +247,7 @@ saleHandler db = do
     -- Convert the result to json, then send it over HTTP as a reply.
     json sales
 
+  -- Get the total sales for a year
   get "/sales/total/:y/:m/:id/" $ do
     conn <- liftAndCatchIO $ clone db
     {- Fetch the parameters from the url (ie. :y, :m :id in the form
@@ -256,11 +273,10 @@ saleHandler db = do
   post "/sales/" $ do
     conn <- liftAndCatchIO $ clone db
     sale :: ProductSale <- jsonData
-    -- return code 400: probably a bad request.
     let pid = sale.saleProduct.productId
     let date = showGregorian $ sale.saleDate
     let quant = sale.saleQuantity
-    when (pid == 0 || date == "" || quant == 0) (status status400 >> finish)
+    when (pid == 0 || date == "") (status status400 >> finish)
     res <- liftIO $ makeSale conn date pid quant
     json res
 
@@ -268,17 +284,6 @@ saleHandler db = do
     conn <- liftAndCatchIO $ clone db
     sales <- liftIO $ percentSalesDiff conn
     json sales
-
-  get "/sales/predicted/:id/:num" $ do
-    conn <- liftAndCatchIO $ clone db
-    pid <- param "id"
-    num <- param "num"
-    traceM $ show pid
-    traceM $ show num
-    salesPrev <- liftIO $ leastSqProd conn pid num
-    traceM $ show salesPrev
-    traceM "PRINTED LEAST SQ SALES"
-    json salesPrev
 
 -- post "/sales/:y/:m/:d/" $ do
 --   prod :: Product <- jsonData
