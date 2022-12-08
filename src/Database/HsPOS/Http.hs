@@ -81,7 +81,7 @@ import Web.Scotty
    the ScottyM monad (which is an IO monad, but not *THE* IO monad)
 
    If you'd like to know more about monads, I'd recommend checking out
-   the [https://wiki.haskell.org/Typeclassopedia](Typeclassopedia) :)
+   the [https://wiki.haskell.org/Typeclassopedia](Typeclassopedia) c:
 -}
 
 -- | Serve the index page (ie. the main page of the app)

@@ -29,11 +29,7 @@ data Product where
       productPrice :: Double
     } ->
     Product
-  deriving (Eq, Ord, Show, Generic)
-
-instance A.ToJSON Product
-
-instance A.FromJSON Product
+  deriving (Eq, Ord, Show, Generic, A.ToJSON, A.FromJSON)
 
 -- | A union with a product and a quantity of that product that is currently
 -- in stock.

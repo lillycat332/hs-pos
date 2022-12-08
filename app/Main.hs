@@ -123,7 +123,7 @@ main = do
   -- Instantiate a parsed version of opts.
   popts <- execParser opts
 
-  conn <- connectPostgreSQL ("host=" <> (optDbHost popts) <> " dbname=" <> (optDbName popts) <> " user=" <> (optDbUser popts))
+  conn <- connectPostgreSQL ("host=" <> optDbHost popts <> " dbname=" <> optDbName popts <> " user=" <> optDbUser popts)
   -- Try and create all the tables + views we want in the database.
   _ <- tryCreateTables conn
   -- These are lexically bound to the context of the following do block.

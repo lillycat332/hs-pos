@@ -15,7 +15,7 @@
 -- version of HsPOS, some were used in previous versions. They are included
 -- here for completeness and for future use. Everything in this module is marked
 -- as INLINE for performance. Additionally, this module makes use of bang patterns
--- for none-list values.
+-- for non-list values.
 module Database.HsPOS.Math where
 
 import Data.Vector (Vector)
@@ -84,11 +84,9 @@ covariance :: Floating a => Vector a -> Vector a -> a
 covariance xs ys =
   (/ len)
     . sum
-    $ V.zipWith (*) ((avgX -) <$> xs) ((avgY -) <$> ys)
+    $ V.zipWith (*) ((average xs -) <$> xs) ((average ys -) <$> ys)
   where
     !len = realToFrac . V.length $ xs
-    !avgX = average xs
-    !avgY = average ys
 {-# INLINE covariance #-}
 
 -- | Calculate the Correlation Coefficient of two lists of Floating point numbers.

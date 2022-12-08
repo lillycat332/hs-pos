@@ -459,6 +459,7 @@ searchProds db term = do
     [[]] -> E.throw NoDataError -- handle this on caller side, throw a 404
     x -> map (desqlP . tuplify3) x
 
+-- | Get a user session from the database.
 getSession :: Connection -> UUID -> IO Session
 getSession db sid = do
   conn <- clone db
@@ -474,6 +475,7 @@ getSession db sid = do
     [x] -> desqlS (tuplify3 x) cuser
     _ -> E.throw MultipleDataError
 
+-- | Add a session to the database.
 addSession :: Connection -> Session -> IO Bool
 addSession db sesh = do
   conn <- clone db
@@ -488,5 +490,3 @@ addSession db sesh = do
       ]
   disconnect conn
   return $ result > 0
-
--- SELECT till_name FROM till WHERE till.till_id=(SELECT al.till_id FROM allowed_till al where al.emp_id = (SELECT emp.emp_id FROM employees emp WHERE emp.name="example"))
