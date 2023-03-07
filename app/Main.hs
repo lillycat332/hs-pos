@@ -1,8 +1,3 @@
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE Trustworthy #-}
-
 -- | Module: Main
 -- License: BSD3
 -- Stability: Stable
@@ -16,6 +11,7 @@ module Main where
 
 import Control.Applicative ((<**>))
 import Control.Monad (unless)
+import Control.Monad.Reader (runReaderT)
 import Database.HDBC.PostgreSQL (connectPostgreSQL)
 import Database.HsPOS.Http
   ( loginHandler,
@@ -27,7 +23,7 @@ import Database.HsPOS.Http
     stockHandler,
     userHandler,
   )
-import Database.HsPOS.Sqlite (tryCreateTables)
+import Database.HsPOS.Postgres (tryCreateTables)
 import Network.Wai.Middleware.Gzip
   ( GzipFiles (GzipCompress),
     GzipSettings (gzipFiles),
@@ -61,6 +57,7 @@ import Options.Applicative
   )
 import Options.Applicative qualified as O
 import Web.Scotty (middleware, scotty)
+import Data.Text.Lazy qualified as T
 
 {- Here are our command line arguments. We use this to pass parameters
    in that affect the operation of the entire program. -}
@@ -121,25 +118,25 @@ args =
 main :: IO ()
 main = do
   -- Instantiate a parsed version of opts.
-  popts <- execParser opts
+  opts <- execParser opts
 
-  conn <- connectPostgreSQL ("host=" <> optDbHost popts <> " dbname=" <> optDbName popts <> " user=" <> optDbUser popts)
+  conn <- connectPostgreSQL ("host=" <> opts.optDbHost <> " dbname=" <> opts.optDbName <> " user=" <> opts.optDbUser)
   -- Try and create all the tables + views we want in the database.
-  _ <- tryCreateTables conn
+  _ <- runReaderT tryCreateTables conn
   -- These are lexically bound to the context of the following do block.
-  let port = optPort popts
+  let port = opts.optPort
    in -- Open a connection to the database.
       -- We clone it so that we can use it in multiple threads.
       {- Run the webserver on the given port. The body of this block
          sets policies/options, and then handles setting routes from
          the handlers. -}
-      scotty port $ do
+      scotty port do
         -- Add policies to prevent directory traversal attacks.
         middleware $ staticPolicy (noDots >-> addBase "public")
         -- Use Gzip, which can shave seconds off load time.
         middleware $ gzip def {gzipFiles = GzipCompress}
         -- unless we are using the option -q/--quiet, log to stdout.
-        unless (optQuiet popts) $ middleware logStdoutDev
+        unless (opts.optQuiet) $ middleware logStdoutDev
         {- Try these handlers when we recieve a connection. The >>,
            or monad "then" operator is a way of sequencing multiple
            handlers. This effectively means: try static, then
@@ -152,7 +149,7 @@ main = do
           >> saleHandler conn
           >> loginHandler conn
           >> stockHandler conn
-          >> purgeHandler conn -- This is last because it's destructive.
+          >> purgeHandler conn (T.pack opts.optDbUser)-- This is last because it's destructive.
   where
     -- Provide the parser to main.
     opts =

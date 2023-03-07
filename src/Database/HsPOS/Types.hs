@@ -1,9 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Trustworthy #-}
 
 -- | Module: Database.HsPOS.Types
@@ -16,6 +13,7 @@ module Database.HsPOS.Types where
 
 import Control.Exception qualified as E
 import Data.Aeson qualified as A
+import Data.Aeson ((.=))
 import Data.Hashable qualified as H
 import Data.Text.Lazy qualified as T
 import Data.Time.Calendar.OrdinalDate qualified as C
@@ -54,27 +52,12 @@ data User where
       userPrivilege :: Integer
     } ->
     User
-  deriving (Eq, Ord, Show, Generic)
-
-instance A.ToJSON User
-
-instance A.FromJSON User
-
--- | Same as User, but excluding the Password field (for sending to client)
--- Not actually a table, just an "illusion" of one, for the client.
--- Sort of like a view. In the database, there is a view table for this.
-data CensoredUser where
-  CensoredUser ::
-    { cuserId :: Integer,
-      cuserName :: T.Text,
-      cuserPrivilege :: Integer
-    } ->
-    CensoredUser
   deriving (Eq, Ord, Show, Generic, H.Hashable)
 
-instance A.ToJSON CensoredUser
+instance A.ToJSON User where
+  toJSON (User i n _ pr) = A.object ["cuserId" .= i, "cuserName" .= n, "cuserPrivilege" .= pr]
 
-instance A.FromJSON CensoredUser
+instance A.FromJSON User
 
 -- | A representation of the stock table.
 data Stock where
@@ -109,7 +92,7 @@ data ProductSale where
     ProductSale
   deriving (Eq, Ord, Show, Generic, A.ToJSON, A.FromJSON)
 
--- | A representation of the Products <--> Sales cross-reference table.
+-- | A representation of the Products <-> Sales cross-reference table.
 -- Not really used, but it's here for completeness.
 data ProductsSalesXref where
   ProductsSalesXref ::
@@ -160,9 +143,3 @@ data APIError = InvalidData
 -- when it should only return one.
 data DBError = NoDataError | MultipleDataError
   deriving (Show, E.Exception)
-
--- Converters
-
--- | Censors a user, removing the password field.
-censorUser :: User -> CensoredUser
-censorUser u = CensoredUser u.userId u.userName u.userPrivilege

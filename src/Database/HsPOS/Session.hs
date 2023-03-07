@@ -1,7 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE Trustworthy #-}
 
 -- | Module: Database.HsPOS.Session
@@ -18,7 +17,7 @@ import Data.Maybe (fromJust)
 import Data.Text qualified as T
 import Data.UUID (UUID)
 import Data.UUID.V1 (nextUUID) -- Using UUID V1, we don't need any features of newer UUID versions so they just add complexity.
-import Database.HsPOS.Types (CensoredUser)
+import Database.HsPOS.Types (User)
 import GHC.Generics (Generic)
 
 -- | Represents a session.
@@ -27,19 +26,19 @@ import GHC.Generics (Generic)
 data Session where
   Session ::
     { sessionUUID :: UUID,
-      sessionUser :: CensoredUser,
+      sessionUser :: User,
       sessionHash :: T.Text
     } ->
     Session
   deriving (Generic, Eq, Ord, Show, A.ToJSON, A.FromJSON)
 
 -- | Generate a Session with a random UUID and a given user.
-randomSession :: CensoredUser -> IO Session
+randomSession :: User -> IO Session
 randomSession u =
   nextUUID >>= \myUUID ->
-    {- TLDR: making new session object from a random UUID and a user but also
+    {- making new session object from a random UUID and a user but also
     -- we have to convert to Text from String from Hash (Int) which makes it messy
-    -- also pure is basically just "return" but it's more general since
+    -- pure is basically just "return" but it's more general since
     -- it's applicative and not just monadic
     -}
     pure $ Session {sessionUUID = fromJust myUUID, sessionUser = u, sessionHash = (T.pack . show . H.hash) u}

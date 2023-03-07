@@ -8,6 +8,7 @@ pkgs.mkShell {
     clang
     zlib
     cabal-install
+    haskellPackages.Cabal_3_8_1_0
     haskell.compiler.ghc924
     sqlite
     postgresql

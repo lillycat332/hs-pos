@@ -1,6 +1,3 @@
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Trustworthy #-}
 
 -- | Module: Database.HsPOS.Auth
@@ -27,4 +24,4 @@ validateCredentials creds hashed = P.validatePassword hashed (pack (T.unpack cre
 quickHashPassword :: String -> IO String
 quickHashPassword pass =
   P.hashPasswordUsingPolicy P.fastBcryptHashingPolicy (pack pass) >>= \bstring ->
-    return $ unpack (fromJust bstring)
+    pure $ unpack (fromJust bstring)

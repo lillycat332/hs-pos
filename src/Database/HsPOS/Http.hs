@@ -1,8 +1,4 @@
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Trustworthy #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -21,6 +17,7 @@ import Control.Exception (try)
 import Control.Exception.Base (SomeException)
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (ReaderT, ask)
 import Data.Aeson qualified as A
 import Data.ByteString.Char8 (pack)
 import Data.Text.Lazy qualified as T
@@ -29,14 +26,13 @@ import Database.HDBC (clone)
 import Database.HDBC.PostgreSQL (Connection)
 import Database.HsPOS.Auth (validateCredentials)
 import Database.HsPOS.Session (Session (sessionUUID), randomSession)
-import Database.HsPOS.Sqlite
+import Database.HsPOS.Postgres
   ( addProd,
     addSession,
     addUser,
-    allCUsers,
+    allUsers,
     allProds,
     bottomProd,
-    getCUser,
     getInStock,
     getProd,
     getSession,
@@ -57,7 +53,7 @@ import Database.HsPOS.Sqlite
     topProd,
     yearlySales,
   )
-import Database.HsPOS.Types (IsOk (IsOk, ok), LoginRequest (requestName), Product (productId, productName, productPrice), ProductSale, User (userName, userPassword), censorUser, saleDate, saleProduct, saleQuantity)
+import Database.HsPOS.Types (IsOk (IsOk, ok), LoginRequest (requestName), Product (productId, productName, productPrice), ProductSale, User (userName, userPassword), saleDate, saleProduct, saleQuantity)
 import Network.HTTP.Types (status400, status404)
 import Web.Scotty
   ( ScottyM,
@@ -76,12 +72,12 @@ import Web.Scotty
   )
 
 -- Connection handlers --
-{- Possibly of note is the pervasive use of the `liftIO` function which may seem
-   like an awful lot of boilerplate, but it's necessary to move IO actions into
-   the ScottyM monad (which is an IO monad, but not *THE* IO monad)
+{- Possibly of note is the pervasive use of the `liftIO`/`liftAndCatch`
+   function which may seem like an awful lot of boilerplate, but it's necessary 
+   to move IO actions into the ScottyM monad (which is an IO monad, but not *THE* IO monad)
 
    If you'd like to know more about monads, I'd recommend checking out
-   the [https://wiki.haskell.org/Typeclassopedia](Typeclassopedia) c:
+   the [https://wiki.haskell.org/Typeclassopedia](Typeclassopedia) :)
 -}
 
 -- | Serve the index page (ie. the main page of the app)
@@ -92,15 +88,15 @@ static = get "/" $ file "./public/index.html"
 -- | Handle listing, searching and adding users
 userHandler :: Connection -> ScottyM ()
 userHandler db = do
-  get "/users/all" $ do
+  get "/users/all" do
     conn <- liftAndCatchIO $ clone db
-    users <- liftAndCatchIO $ allCUsers conn
+    users <- liftAndCatchIO $ allUsers conn
     json $ map A.toJSON users
 
-  get "/users/:id" $ do
+  get "/users/:id" do
     conn <- liftAndCatchIO $ clone db
     uid <- param "id"
-    user <- liftIO $ try $ getCUser conn uid
+    user <- liftIO $ try $ getUser conn uid
     case user of
       -- No data, db error or user not found
       -- return code 400: probably a bad request
@@ -109,7 +105,7 @@ userHandler db = do
       -- data is good, send to client
       Right u -> json $ A.toJSON u
 
-  post "/users/" $ do
+  post "/users/" do
     conn <- liftAndCatchIO $ clone db
     user :: User <- jsonData
     -- didn't send us a name so we can't add them
@@ -118,7 +114,7 @@ userHandler db = do
     result <- liftIO $ addUser conn user
     json result
 
-  delete "/users/:id" $ do
+  delete "/users/:id" do
     conn <- liftAndCatchIO $ clone db
     pid <- param "id"
     res <- liftIO $ removeUser conn pid
@@ -129,33 +125,33 @@ userHandler db = do
 prodHandler :: Connection -> ScottyM ()
 prodHandler db = do
   -- Select a product by ID
-  get "/prods/:id/" $ do
+  get "/prods/:id/" do
     conn <- liftAndCatchIO $ clone db
     pid <- param "id"
     prod <- liftIO $ getProd conn pid
     json $ A.toJSON prod
 
   -- All products
-  get "/prods/all" $ do
+  get "/prods/all" do
     conn <- liftAndCatchIO $ clone db
     prods <- liftIO (allProds conn)
     let prodsJSON = map A.toJSON prods
     json $ A.toJSON prodsJSON
 
   -- Top product ~ the product with the most sales
-  get "/prods/top" $ do
+  get "/prods/top" do
     conn <- liftAndCatchIO $ clone db
     prod <- liftIO (topProd conn)
     json prod
 
   -- Bottom product ~ the product with the least sales
-  get "/prods/bottom" $ do
+  get "/prods/bottom" do
     conn <- liftAndCatchIO $ clone db
     prod <- liftIO (bottomProd conn)
     json prod
 
   -- Add a product
-  post "/prods/" $ do
+  post "/prods/" do
     conn <- liftAndCatchIO $ clone db
     prod :: Product <- jsonData
     -- didn't send us a name so we can't add them
@@ -168,30 +164,34 @@ prodHandler db = do
     -- send the result to the client (i.e. did it work or nah)
     json res
 
-  delete "/prods/:id" $ do
+  -- Delete a product
+  delete "/prods/:id" do
     conn <- liftAndCatchIO $ clone db
     pid <- param "id"
     res <- liftIO $ removeProd conn pid
     -- send the result to the client.
     json res
 
--- | Handles requests for stock data
+-- | Handles requests for stock data, and setting stock for products
 stockHandler :: Connection -> ScottyM ()
 stockHandler db = do
-  get "/stock/:id" $ do
+  -- Get specific stock data by ID
+  get "/stock/:id" do
     conn <- liftAndCatchIO $ clone db
     pid <- param "id"
     prod <- liftIO $ getProd conn pid
     stockData <- liftIO $ getInStock conn prod
     json stockData
 
-  get "/stock/all/" $ do
+  -- Get list of stock data
+  get "/stock/all/" do
     conn <- liftAndCatchIO $ clone db
     prods <- liftIO $ allProds conn
     stockData <- liftIO $ mapM (getInStock conn) prods
     json stockData
 
-  put "/stock/:pid/:num" $ do
+  -- Set stock
+  put "/stock/:pid/:num" do
     conn <- liftAndCatchIO $ clone db
     pid <- param "pid"
     num <- param "num"
@@ -201,9 +201,8 @@ stockHandler db = do
 -- | Handle sales data requests, and adding sales into the database.
 saleHandler :: Connection -> ScottyM ()
 saleHandler db = do
-  -- At the top because of order of execution issues
   -- Fetch predicted sales for a product
-  get "/sales/predicted/:id/:num" $ do
+  get "/sales/predicted/:id/:num" do
     conn <- liftAndCatchIO $ clone db
     pid :: Integer <- param "id"
     num :: Integer <- param "num"
@@ -219,7 +218,7 @@ saleHandler db = do
     text . T.pack . show $ salesPrev / 24.0
 
   -- get sales for a month
-  get "/sales/:y/:m/:id/" $ do
+  get "/sales/:y/:m/:id/" do
     conn <- liftAndCatchIO $ clone db
     {- Fetch the parameters from the url (ie. :date, :id in the form
        http://localhost:3000/sales/2022/07/5) -}
@@ -232,7 +231,7 @@ saleHandler db = do
     json sales
 
   -- get sales for a year range
-  get "/sales/:y/:m/to/:y2/:m2/:id/" $ do
+  get "/sales/:y/:m/to/:y2/:m2/:id/" do
     conn <- liftAndCatchIO $ clone db
     pid <- param "id"
     month <- param "m"
@@ -248,7 +247,7 @@ saleHandler db = do
     json sales
 
   -- Get the total sales for a year
-  get "/sales/total/:y/:m/:id/" $ do
+  get "/sales/total/:y/:m/:id/" do
     conn <- liftAndCatchIO $ clone db
     {- Fetch the parameters from the url (ie. :y, :m :id in the form
        http://localhost:3000/sales/2022/07/5) -}
@@ -260,7 +259,7 @@ saleHandler db = do
     -- Convert the result to json, then send it over HTTP as a reply.
     json sales
 
-  get "/sales/:y/:id/" $ do
+  get "/sales/:y/:id/" do
     conn <- liftAndCatchIO $ clone db
     {- Fetch the parameters from the url (ie. :year, :id in the form
        http://localhost:3000/sales/2022/5) -}
@@ -270,7 +269,8 @@ saleHandler db = do
     -- Convert the result to text, then send it over HTTP as a reply.
     text $ T.pack $ show sales
 
-  post "/sales/" $ do
+  -- Make a sale
+  post "/sales/" do
     conn <- liftAndCatchIO $ clone db
     sale :: ProductSale <- jsonData
     let pid = sale.saleProduct.productId
@@ -279,13 +279,14 @@ saleHandler db = do
     when (pid == 0 || date == "") (status status400 >> finish)
     res <- liftIO $ makeSale conn date pid quant
     json res
-
-  get "/sales/percent-diff/" $ do
+  
+  -- get % diff between last month
+  get "/sales/percent-diff/" do
     conn <- liftAndCatchIO $ clone db
     sales <- liftIO $ percentSalesDiff conn
     json sales
 
--- post "/sales/:y/:m/:d/" $ do
+-- post "/sales/:y/:m/:d/" do
 --   prod :: Product <- jsonData
 --   year <- param "y"
 --   month <- param "m"
@@ -298,7 +299,7 @@ saleHandler db = do
 loginHandler :: Connection -> ScottyM ()
 loginHandler db = do
   -- tawa insa means enter in toki pona :)
-  post "/tawa-insa/" $ do
+  post "/tawa-insa/" do
     conn <- liftAndCatchIO $ clone db
     -- We want the JSON body of the request, which should contain the
     -- username and password.
@@ -312,7 +313,7 @@ loginHandler db = do
     -- Not worth trying to salvage, so we'll just return a 400.
     unless res (status status400 >> finish)
     -- Now that we know all is good, let's make a session for the user.
-    sesh <- liftIO $ randomSession (censorUser user)
+    sesh <- liftIO $ randomSession user
     -- Add the session to the session store, discarding the result.
     -- We don't care if it fails, at worst they'll just have to log in again.
     _ <- liftAndCatchIO $ addSession conn sesh
@@ -320,7 +321,8 @@ loginHandler db = do
     -- They can retain this for later use.
     json sesh
 
-  post "/session/" $ do
+  -- Add a session to the DB
+  post "/session/" do
     conn <- liftAndCatchIO $ clone db
     -- Check a user's session
     sesh :: Session <- jsonData
@@ -329,8 +331,9 @@ loginHandler db = do
     sesh' <- liftAndCatchIO $ getSession conn sid
     let eq = sesh == sesh'
     json (eq, sesh')
-
-  get "/onboard/" $ do
+  
+  -- Check if we need to onboard
+  get "/onboard/" do
     conn <- liftAndCatchIO $ clone db
     -- are there any users in the database?
     -- if there are, we don't want to present the user with the onboarding page.
@@ -339,12 +342,10 @@ loginHandler db = do
     json ok'
 
 -- | Handle search requests
--- Not sure if i'll use this, it's a bit easier to search on the client
--- using a filter/search function, but it's here if i need it.
--- It does come in handy for debugging.
 searchHandler :: Connection -> ScottyM ()
-searchHandler db = do
-  get "/search/prods/:query" $ do
+searchHandler db = do  
+  -- Search by a query.
+  get "/search/prods/:query" do
     conn <- liftAndCatchIO $ clone db
     query <- param "query"
     result <- liftIO $ try $ searchProds conn query
@@ -359,9 +360,9 @@ searchHandler db = do
 
 -- | Purges the entire database, deleting then recreating it!
 -- Be very careful with this.
-purgeHandler :: Connection -> ScottyM ()
-purgeHandler db =
+purgeHandler :: Connection -> T.Text -> ScottyM ()
+purgeHandler db user =
   delete "/UNSAFE-PURGE-ALL-CHECK-FIRST-IM-SERIOUS/" $
     liftAndCatchIO $
       clone db >>= \conn ->
-        liftIO (purgeDb conn)
+        liftIO (purgeDb conn user)

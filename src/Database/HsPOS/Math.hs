@@ -1,6 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Trustworthy #-}
 
 -- | Module: Database.HsPOS.Math
@@ -13,9 +10,7 @@
 -- They are primarily used for statistical calculations, however, they are not
 -- specific to statistics or to HsPOS. Not all of them are used in the current
 -- version of HsPOS, some were used in previous versions. They are included
--- here for completeness and for future use. Everything in this module is marked
--- as INLINE for performance. Additionally, this module makes use of bang patterns
--- for non-list values.
+-- here for completeness and for future use. 
 module Database.HsPOS.Math where
 
 import Data.Vector (Vector)
@@ -58,13 +53,7 @@ average = (/) <$> sum <*> realToFrac . V.length
 -- | Calculate the Covariance of two lists of Floating numbers.
 -- they must be of the same length. If they are not, the result is undefined.
 covariance :: Floating a => Vector a -> Vector a -> a
--- You might be looking at this and thinking "What the **** is this?".
--- Here's an explanation of sorts:
--- First, the averages are calculated. This is put in a where clause so that it
--- is only calculated once. (referential transparency should guarantee that
--- this is the case, but I'm not sure if it does)
---
--- The function body might look a little strange, but it's actually quite
+-- This function body might look a little strange, but it's actually quite
 -- elegant. Remember, the . operator is composition - we can think of it as
 -- a pipe. for example:
 -- (/ len) . sum [a list] is like:
@@ -87,14 +76,14 @@ covariance xs ys =
     $ V.zipWith (*) ((average xs -) <$> xs) ((average ys -) <$> ys)
   where
     !len = realToFrac . V.length $ xs
-{-# INLINE covariance #-}
+{-# INLINABLE covariance #-}
 
 -- | Calculate the Correlation Coefficient of two lists of Floating point numbers.
 --    They must be of the same length. If they are not, the result is undefined.
 correlation :: (Floating a, Ord a) => Vector a -> Vector a -> a
 -- Self explanatory.
 correlation xs ys = covariance xs ys / (stddev xs * stddev ys)
-{-# INLINE correlation #-}
+{-# INLINABLE correlation #-}
 
 -- | Calculate the absolute difference between two numbers.
 --   Shorthand for abs (x - y)
@@ -108,6 +97,33 @@ absDiff = (abs .) . (-)
 --    function. The function takes two lists of Floating point numbers. They must
 --    be of the same length. If they are not, the result is undefined, as leastSq
 --    operates on paired data.
+--
+--    This is a haskell version of the [Least Squares formula]
+--
+--    Let N be the number of items.
+--
+--    \[
+--    m = \frac{N \sum(xy) - \sum x \sum y}{N \sum(x^2) - (\sum x)^2}
+--    \]
+--    \[
+--    b = \frac{\sum y - (\sum x)^2}{N}
+--    \]
+--
+--    Thus, the equation for the line is defined as:
+--    \(y = mx + b\)
+--
+--    where x is a parameter corresponding to the "left" hand side of the set of pairs.
+--
+--    So, for the data:
+--
+--    \[{(2, 4), (3, 5), (5, 7), (7, 10), (9, 15)}\]
+--
+--    and the x value 8, we get the number 12.45 - corresponding to the pair (8,12.45).
+--
+--    This translates to a function \(\lambda x. m * x + b\)
+--    - making this a Higher Order Function.
+--    This allows us to cache the result in memory, which is useful for repeated checks
+--    of the same data.
 leastSq :: Floating a => Vector a -> Vector a -> (a -> a)
 leastSq xs ys = \x -> m * x + b
   where
@@ -123,3 +139,4 @@ leastSq xs ys = \x -> m * x + b
       -- y-intercept
       (V.sum ys - m * sum xs)
         / len
+

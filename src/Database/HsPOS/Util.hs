@@ -1,4 +1,3 @@
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE Trustworthy #-}
 
 -- | Module: Database.HsPOS.Util
@@ -16,8 +15,7 @@ import Data.UUID (fromString)
 import Database.HDBC (SqlValue, fromSql)
 import Database.HsPOS.Session (Session (Session))
 import Database.HsPOS.Types
-  ( CensoredUser (..),
-    Product (Product),
+  ( Product (Product),
     ProductWithStock (ProductWithStock),
     User (..),
   )
@@ -33,15 +31,6 @@ tuplify4 :: [d] -> (d, d, d, d)
 tuplify4 [a, b, c, d] = (a, b, c, d)
 tuplify4 _ = error "tuplify4: list must have 4 elements"
 
--- | "DeSQL" a censored user tuple (Int,Text,Int),
--- ie. turn it from SQL types into a CensoredUser.
-desqlCU :: (SqlValue, SqlValue, SqlValue) -> CensoredUser
-desqlCU (cuid, name, priv) =
-  CensoredUser
-    { cuserId = fromSql cuid,
-      cuserName = T.pack $ fromSql name,
-      cuserPrivilege = fromSql priv
-    }
 
 -- | "DeSQL" a user as a tuple (Int,Text,Int),
 -- ie. turn it from SQL types into a User .
@@ -76,11 +65,11 @@ desqlPS (pid, name, price, inStock) =
     (fromSql inStock)
 
 -- | Make a session from a session id, hash and a censored user.
-desqlS :: (SqlValue, SqlValue, SqlValue) -> CensoredUser -> Session
-desqlS (sid, _, hash) cuser =
+desqlS :: (SqlValue, SqlValue, SqlValue) -> User -> Session
+desqlS (sid, _, hash) user =
   Session
     ((fromJust . fromString . fromSql) sid)
-    cuser
+    user
     (fromSql hash)
 
 -- | Creates a random generator with the specified seed value

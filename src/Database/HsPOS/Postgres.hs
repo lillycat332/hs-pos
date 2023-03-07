@@ -1,19 +1,17 @@
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Trustworthy #-}
 
--- | Module: Database.HsPOS.Sqlite
+-- | Module: Database.HsPOS.Postgres
 -- License: BSD3
 -- Stability: Unstable
 -- Portability: GHC
--- Description: Haskell interfaces to SQL queries for the SQLite database.
--- This module contains Haskell interfaces to SQL queries for the SQLite database.
-module Database.HsPOS.Sqlite where
+-- Description: Haskell interfaces to SQL queries for the Postgres database.
+-- This module contains Haskell interfaces to SQL queries for the Postgres database.
+module Database.HsPOS.Postgres where 
 
 import Control.Exception qualified as E
 import Control.Monad (when)
+import Control.Monad.Reader (ReaderT, ask)
+import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromJust, isJust)
 import Data.Text.Lazy qualified as T
 import Data.Time (diffDays)
@@ -35,19 +33,17 @@ import Database.HsPOS.Math (absDiff, average, leastSq)
 import Database.HsPOS.Session (Session (sessionHash, sessionUUID, sessionUser))
 import Database.HsPOS.Types
   ( APIError (InvalidData),
-    CensoredUser (cuserId),
     DBError (MultipleDataError, NoDataError),
     Product (productId),
     ProductWithStock (ProductWithStock),
     Sale (Sale),
-    User,
+    User (userId),
     userName,
     userPassword,
     userPrivilege,
   )
 import Database.HsPOS.Util
-  ( desqlCU,
-    desqlP,
+  ( desqlP,
     desqlPS,
     desqlS,
     desqlU,
@@ -58,10 +54,11 @@ import Database.HsPOS.Util
 -- SQL functions
 
 -- | Purges the entire database
-purgeDb :: Connection -> IO ()
-purgeDb db = do
-  _ <- run db "DROP A" []
-  return ()
+purgeDb :: Connection -> T.Text -> IO ()
+purgeDb db user = do
+  _ <- run db "SELECT f_truncate_tables(?);" [toSql user]
+  commit db
+  pure ()
 
 -- | Creates several convenience views to simplify queries
 mkViews :: Connection -> IO ()
@@ -83,10 +80,11 @@ mkViews db = do
   disconnect conn
 
 -- | Creates the requisite tables for the database.
-tryCreateTables :: Connection -> IO ()
-tryCreateTables db = do
-  conn <- clone db
-  let q =
+tryCreateTables :: ReaderT Connection IO ()
+tryCreateTables = do
+  db <- ask -- get the connection from the ReaderT & clone it
+  conn <- liftIO $ clone db
+  let q = -- Don't ask
         [ "CREATE TABLE IF NOT EXISTS users (user_id serial not null primary key, user_name TEXT not null,user_password TEXT not null, user_privilege INTEGER not null)",
           "CREATE TABLE IF NOT EXISTS sessions (session_id text not null primary key, user_id integer references users, session_hash integer not null)",
           "CREATE TABLE IF NOT EXISTS products (product_id serial not null primary key,product_name TEXT not null,product_price DOUBLE not null)",
@@ -100,11 +98,11 @@ tryCreateTables db = do
           "CREATE TABLE IF NOT EXISTS oos_stock_xref( oos_id INTEGER NOT NULL, stock_id INTEGER NOT NULL, FOREIGN KEY(oos_id) REFERENCES out_of_stock(oos_id), FOREIGN KEY(stock_id) REFERENCES stock(stock_id), CONSTRAINT osx_id PRIMARY KEY (oos_id, stock_id))",
           "CREATE OR REPLACE FUNCTION f_truncate_tables(_username text) RETURNS void LANGUAGE plpgsql AS $func$ DECLARE _tbl text; _sch text; BEGIN FOR _sch, _tbl IN SELECT schemaname, tablename FROM pg_tables WHERE tableowner = _username AND schemaname = 'public' LOOP EXECUTE format('TRUNCATE TABLE %I.%I CASCADE', _sch, _tbl); END LOOP; END $func$;"
         ]
-  mapM_ (\x -> run conn x []) q
-  commit conn
-  mkViews db
-  commit conn
-  disconnect conn
+  liftIO $ mapM_ (\x -> run conn x []) q
+  liftIO $ commit conn
+  liftIO $ mkViews db
+  liftIO $ commit conn
+  liftIO $ disconnect conn
 
 -- | Sets stock of `pid` to `num`
 setStock :: Connection -> Integer -> Integer -> IO Bool
@@ -124,15 +122,13 @@ setStock db pid num = do
         [] -> Nothing
         _ -> Just (head (head rid))
   when
-    (isJust sid && isJust rid')
-    ( do
+    (isJust sid && isJust rid') do
         _ <- run conn q4 [fromJust rid', toSql pid]
         pure ()
-    )
 
   commit conn
   disconnect conn
-  return $ ok >= 1
+  pure $ ok >= 1
 
 -- | Gets the stock of a Product. Returns a ProductWithStock
 getInStock :: Connection -> Product -> IO ProductWithStock
@@ -141,11 +137,12 @@ getInStock db prod = do
   let q = "SELECT in_stock FROM stock WHERE product_id = (?)"
   result <- quickQuery' conn q [toSql prod.productId]
   disconnect conn
-  return $ case result of
+  pure case result of
     [] -> ProductWithStock prod 0
     [x] -> ProductWithStock prod (fromSql $ head x)
     _ -> E.throw MultipleDataError
 
+-- | Run the least squares statistical algorithm on a product to estimate how long a certain amount of stock would last.
 leastSqProd :: Connection -> Integer -> Integer -> IO Double
 leastSqProd db pid num = do
   conn <- clone db
@@ -165,7 +162,7 @@ leastSqProd db pid num = do
   let dateDiffs :: [Double] = map fromIntegral $ zipWith diffDays restocks' oos'
   let res = leastSq (fromList dateDiffs) (fromList restockQty') (fromIntegral num)
   disconnect conn
-  return res
+  pure res
 
 -- | Records a sale of `quant` of `pid` on `date`.
 makeSale :: Connection -> String -> Integer -> Integer -> IO Bool
@@ -181,14 +178,15 @@ makeSale db date pid quant = do
   _ <- quickQuery' conn q2 [toSql pid, (head . head) sid]
   ok <- run conn q3 [toSql pid]
   oos <- quickQuery' conn q4 [toSql pid]
-  when (oos == [[toSql (0 :: Integer)]]) $ do
+  when (oos == [[toSql (0 :: Integer)]]) do
     oid <- quickQuery' conn q5 [toSql date]
     _ <- quickQuery' conn q6 [(head . head) oid, toSql pid]
-    return ()
+    pure ()
   commit conn
   disconnect conn
-  return $ ok >= 1
+  pure $ ok >= 1
 
+-- | Return the percentage difference over the last month.
 percentSalesDiff :: Connection -> IO (Double, Bool)
 percentSalesDiff db = do
   conn <- clone db
@@ -208,11 +206,11 @@ percentSalesDiff db = do
             ad = absDiff x' y'
             avg = average $ fromList [x', y']
             up = x' > y' -- Is the first month's sales greater than the second?
-         in return (ad / avg, up)
+         in pure (ad / avg, up)
       _ -> E.throw MultipleDataError
     _ -> E.throw MultipleDataError
 
--- | monthlySales takes:
+-- | monthlyTotalSales takes:
 -- db, a Connection to the database,
 -- d, a date in the format "YYYY-MM",
 -- id, a product id,
@@ -223,30 +221,34 @@ monthlyTotalSales db d pid = do
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE to_char(sales_date, '%Y-%m') = (?) AND products_sales_xref.product_id = (?)"
   r <- quickQuery' conn q [toSql d, toSql pid]
   disconnect conn
-  return $ case r of
+  pure case r of
     [] -> 0
     [x] -> fromSql $ head x
     _ -> E.throw MultipleDataError
 
+-- | monthlySales returns all of the sales for a given month.
 monthlySales :: Connection -> String -> Integer -> IO [Sale]
 monthlySales db d pid = do
   conn <- clone db
   let q = "select sales_date, sum(number_sold) from sales s inner join products_sales_xref psx on (psx.sales_id = s.sales_id and psx.product_id = (?)) where s.sales_date >= to_date((?), 'YYYY-MM-DD') and s.sales_date < (select date (?) + interval '1 month') group by s.sales_date, psx.product_id order by sales_date desc"
   r <- quickQuery' conn q [toSql pid, toSql d, toSql d]
+  -- This will complain abt a non-exhaustive pattern match but it doesn't matter bc we already know the types.
   let r' = fmap (\[x, y] -> (x, y)) r
   let sales = (\(y, z) -> Sale 0 (fromSql y) (fromSql z)) <$> r'
   disconnect conn
-  return sales
+  pure sales
 
+-- | rangeSales returns a list of all sales over a given date range
 rangeSales :: Connection -> String -> String -> Integer -> IO [Sale]
 rangeSales db date date2 pid = do
   conn <- clone db
   let q = "select sales_date, sum(number_sold) from sales s inner join products_sales_xref psx on (psx.sales_id = s.sales_id and psx.product_id = (?)) where s.sales_date >= to_date((?), 'YYYY-MM-DD') and s.sales_date < to_date((?), 'YYYY-MM-DD') group by s.sales_date, psx.product_id order by sales_date desc"
   r <- quickQuery' conn q [toSql pid, toSql date, toSql date2]
+  -- This will complain abt a non-exhaustive pattern match but it doesn't matter bc we already know the types.
   let r' = fmap (\[x, y] -> (x, y)) r
   let sales = (\(y, z) -> Sale 0 (fromSql y) (fromSql z)) <$> r'
   disconnect conn
-  return sales
+  pure sales
 
 -- | yearlySales returns the total sales of said product id for that year.
 yearlySales :: Connection -> String -> Integer -> IO Integer
@@ -255,7 +257,7 @@ yearlySales db d pid = do
   let q = "SELECT SUM(number_sold) FROM sales INNER JOIN products_sales_xref ON products_sales_xref.sales_id = sales.sales_id WHERE to_char(sales_date, '%Y') = (?) AND products_sales_xref.product_id = (?)"
   r <- quickQuery' conn q [toSql d, toSql pid]
   disconnect conn
-  return $ case r of
+  pure case r of
     [] -> 0
     [x] -> fromSql $ head x
     _ -> E.throw MultipleDataError
@@ -265,18 +267,19 @@ yearlySales db d pid = do
 getProdName :: Connection -> Integer -> IO [String]
 getProdName db pid = do
   conn <- clone db
-  let query = "SEELCT product_name FROM products WHERE product_id = (?)"
+  let query = "SELECT product_name FROM products WHERE product_id = (?)"
   r <- quickQuery' conn query [toSql pid]
   disconnect conn
-  return (map fromSql (head r))
+  pure (map fromSql (head r))
 
+-- | returns a product with stock data attached.
 getProdWithStock :: Connection -> Integer -> IO ProductWithStock
 getProdWithStock db pid = do
   conn <- clone db
   let q = "select p.*, s.in_stock from products as p left join stock s on p.product_id = s.product_id left join products_sales_xref psx on p.product_id = psx.product_id where p.product_id=(?)"
   r <- quickQuery' conn q [toSql pid]
   disconnect conn
-  return $ case r of
+  pure case r of
     [[]] -> E.throw NoDataError
     [x] -> desqlPS . tuplify4 $ x
     _ -> E.throw MultipleDataError
@@ -288,7 +291,7 @@ getProdsWithStock db = do
   let q = "select p.*, s.in_stock from products as p left join stock s on p.product_id = s.product_id left join products_sales_xref psx on p.product_id = psx.product_id"
   r <- quickQuery' conn q []
   disconnect conn
-  return $ case r of
+  pure case r of
     [[]] -> E.throw NoDataError
     x -> map (desqlPS . tuplify4) x
 
@@ -305,7 +308,7 @@ addProd db name price = do
   _ <- run conn q' [pid, toSql ins]
   commit conn
   disconnect conn
-  return $ case r of
+  pure case r of
     [] -> False
     [_] -> True
     _ -> E.throw MultipleDataError
@@ -318,7 +321,7 @@ removeProd db pid = do
   r <- run conn q [toSql pid]
   commit conn
   disconnect conn
-  return $ r < 0
+  pure $ r < 0
 
 -- | Add a User into the database, returning True if it worked.
 addUser :: Connection -> User -> IO Bool
@@ -329,28 +332,16 @@ addUser db usr = do
   r <- run conn q [toSql usr.userName, toSql pw, toSql usr.userPrivilege]
   commit conn
   disconnect conn
-  return $ r < 0
+  pure $ r < 0
 
--- | Return a list of all of the users in the DB, excluding the passwords.
-allCUsers :: Connection -> IO [CensoredUser]
-allCUsers db = do
+-- | Return a list of all of the users in the DB.
+allUsers :: Connection -> IO [User]
+allUsers db = do
   conn <- clone db
-  let q = "SELECT user_id, user_name, user_privilege FROM users"
+  let q = "SELECT * FROM users"
   r <- quickQuery' conn q []
   disconnect conn
-  return $ map (desqlCU . tuplify3) r
-
--- | Fetch a specific user, excluding the password.
-getCUser :: Connection -> Integer -> IO CensoredUser
-getCUser db uid = do
-  conn <- clone db
-  let q = "SELECT * FROM censored_users WHERE user_id=(?)"
-  result <- quickQuery' conn q [toSql uid]
-  disconnect conn
-  return $ case result of
-    [[]] -> E.throw NoDataError
-    [x] -> desqlCU $ tuplify3 x
-    _ -> E.throw MultipleDataError
+  pure $ map (desqlU . tuplify4) r
 
 -- | Get a specific user, including the password.
 -- don't expose this through the API. duh.
@@ -361,7 +352,7 @@ getUser db uid = do
   result <- quickQuery' conn q [toSql uid]
   disconnect conn
   when (result == [[]]) (E.throw NoDataError)
-  return $ case result of
+  pure case result of
     [[]] -> E.throw NoDataError
     [x] -> desqlU $ tuplify4 x
     _ -> E.throw MultipleDataError
@@ -374,7 +365,7 @@ removeUser db uid = do
   r <- run conn q [toSql uid]
   commit conn
   disconnect conn
-  return $ r < 0
+  pure $ r < 0
 
 -- | Test if there's anything in the users table, returning True if there is.
 isUsersEmpty :: Connection -> IO Bool
@@ -383,7 +374,7 @@ isUsersEmpty db = do
   let query = "SELECT COUNT(1) WHERE EXISTS (SELECT * FROM users)"
   result <- quickQuery' conn query []
   disconnect conn
-  return $ case result of
+  pure case result of
     [[]] -> True
     [x] -> fromSql $ head x
     _ -> E.throw MultipleDataError
@@ -396,17 +387,18 @@ searchUsers db term = do
   let term' = "%" <> term <> "%"
   result <- quickQuery' conn query [toSql term']
   disconnect conn
-  return $ case result of
+  pure case result of
     [[]] -> []
     x -> map (fromSql . head) x
 
+-- | Get a single product from the DB
 getProd :: Connection -> Integer -> IO Product
 getProd db pid = do
   conn <- clone db
   let q = "SELECT * FROM products WHERE product_id=(?)"
   result <- quickQuery' conn q [toSql pid]
   disconnect conn
-  return $ case result of
+  pure case result of
     [[]] -> E.throw NoDataError
     [x] -> desqlP $ tuplify3 x
     _ -> E.throw MultipleDataError
@@ -418,7 +410,7 @@ allProds db = do
   let q = "SELECT * FROM products"
   result <- quickQuery' conn q []
   disconnect conn
-  return $ case result of
+  pure case result of
     [[]] -> []
     x -> map (desqlP . tuplify3) x
 
@@ -429,7 +421,7 @@ topProd db = do
   let q = "select product_id,product_name,product_price from best_product"
   result <- quickQuery' conn q []
   disconnect conn
-  return $ case result of
+  pure case result of
     [[]] -> E.throw NoDataError
     [x] -> desqlP $ tuplify3 x
     _ -> head $ map (desqlP . tuplify3) result
@@ -441,7 +433,7 @@ bottomProd db = do
   let q = "select product_id,product_name,product_price from worst_product"
   result <- quickQuery' conn q []
   disconnect conn
-  return $ case result of
+  pure case result of
     [[]] -> E.throw NoDataError
     [x] -> desqlP $ tuplify3 x
     _ -> head $ map (desqlP . tuplify3) result
@@ -455,7 +447,7 @@ searchProds db term = do
   let term' = "%" <> term <> "%"
   result <- quickQuery' conn query [toSql term']
   disconnect conn
-  return $ case result of
+  pure case result of
     [[]] -> E.throw NoDataError -- handle this on caller side, throw a 404
     x -> map (desqlP . tuplify3) x
 
@@ -469,10 +461,10 @@ getSession db sid = do
   result2 <- H.quickQuery' conn query2 [toSql . toString $ sid]
   let uid = (fromSql . head . head) result2
   disconnect conn
-  cuser <- getCUser db uid
-  return $ case result of
+  user <- getUser db uid
+  pure case result of
     [[]] -> E.throw NoDataError
-    [x] -> desqlS (tuplify3 x) cuser
+    [x] -> desqlS (tuplify3 x) user
     _ -> E.throw MultipleDataError
 
 -- | Add a session to the database.
@@ -485,8 +477,8 @@ addSession db sesh = do
       conn
       query
       [ toSql (toString sesh.sessionUUID),
-        toSql (cuserId sesh.sessionUser),
+        toSql (userId sesh.sessionUser),
         toSql sesh.sessionHash
       ]
   disconnect conn
-  return $ result > 0
+  pure $ result > 0
